@@ -9,7 +9,8 @@
     <body class="bg-gray-100 flex items-center justify-center h-screen">
         <div class="bg-white rounded-lg shadow-md p-8 w-96">
             <h1 class="text-3xl font-bold mb-6 text-center">Загрузите PDF файл</h2>
-            <form action="#" method="POST" enctype="multipart/form-data">
+            <form action="/" method="POST" enctype="multipart/form-data">
+                @csrf
                 <div class="mb-4">
                     <label for="file-upload" class="block text-sm font-medium text-gray-700">Выберите файл</label>
                     <input type="file" id="file-upload" name="file" accept=".pdf" class="mt-1 block w-full text-sm text-gray-500 
