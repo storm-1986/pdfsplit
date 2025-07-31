@@ -1,28 +1,42 @@
-<!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        @vite('resources/css/app.css')
-        <title>{{ config('app.name', 'Laravel') }}</title>
-    </head>
-    <body class="bg-gray-100 flex items-center justify-center h-screen">
-        <div class="bg-white rounded-lg shadow-md p-8 w-96">
-            <h1 class="text-3xl font-bold mb-6 text-center">Загрузите PDF файл</h2>
-            <form action="/" method="POST" enctype="multipart/form-data">
-                @csrf
-                <div class="mb-4">
-                    <label for="file-upload" class="block text-sm font-medium text-gray-700">Выберите файл</label>
-                    <input type="file" id="file-upload" name="pdf" accept=".pdf" class="mt-1 block w-full text-sm text-gray-500 
-                    file:mr-4 file:py-2 file:px-4 
-                    file:rounded-md file:border-0 
-                    file:text-sm file:font-semibold 
-                    file:bg-blue-50 file:text-blue-700 
-                    hover:file:bg-blue-100 
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" required>
-                </div>
-                <button type="submit" class="w-full py-2 px-4 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition duration-200 cursor-pointer">Загрузить</button>
-            </form>
+@extends('layouts.app')
+
+@section('content')
+<div id="upload-container" class="bg-white rounded-lg shadow-md p-8 w-96 mx-auto">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Загрузите PDF файл</h1>
+    
+    <form id="upload-form" action="{{ route('pdf.process') }}" method="POST" enctype="multipart/form-data" class="space-y-4">
+        @csrf
+        
+        <div>
+            <label for="pdf" class="block text-sm font-medium text-gray-700 mb-1">Выберите файл PDF</label>
+            <input type="file" id="pdf" name="pdf" accept=".pdf" required
+                   class="block w-full text-sm text-gray-500
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-md file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-blue-50 file:text-blue-700
+                          hover:file:bg-blue-100">
         </div>
-    </body>
-</html>
+        
+        <button type="submit" 
+                class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition duration-200 cursor-pointer">
+            Разбить на страницы
+        </button>
+    </form>
+</div>
+
+<div id="preview-container" class="hidden w-full p-4">
+    <div class="max-w-7xl mx-auto bg-white rounded-lg shadow-md p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h2 id="pdf-title" class="text-2xl font-bold text-gray-800"></h2>
+            <button id="back-button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md transition cursor-pointer">
+                ← Назад к загрузке
+            </button>
+        </div>
+        
+        <div id="thumbnails-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
+    </div>
+</div>
+
+@vite('resources/js/pdf-upload.js')
+@endsection

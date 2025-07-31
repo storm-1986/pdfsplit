@@ -7,13 +7,13 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\PdfToImage\Pdf;
 
-class indexController extends Controller
+class PdfSplitterController extends Controller
 {
-    public function index(){
+    public function showUploadForm(){
         return view('index');
     }
 
-    public function upload(Request $request){
+    public function uploadAndSplit(Request $request){
 
         $request->validate(['pdf' => 'required|mimes:pdf|max:50000']);
         try {
@@ -72,7 +72,7 @@ class indexController extends Controller
             
             $pages[] = [
                 'number' => $i,
-                'image_url' => Storage::disk('public')->url($storagePath),
+                'image_url' => asset("storage/{$storagePath}"), // Полный URL с доменом
                 'storage_path' => $storagePath
             ];
         }

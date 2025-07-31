@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\indexController;
+use App\Http\Controllers\PdfSplitterController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -13,5 +13,5 @@ use Illuminate\Support\Facades\Route;
 | be assigned to the "web" middleware group. Make something great!
 |
 */
-Route::get('/', [indexController::class, 'index']);
-Route::post('/', [IndexController::class, 'upload']);
+Route::get('/', [PdfSplitterController::class, 'showUploadForm'])->name('pdf.upload');
+Route::post('/', [PdfSplitterController::class, 'uploadAndSplit'])->name('pdf.process');
