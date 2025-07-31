@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\PdfToImage\Pdf;
@@ -78,5 +79,24 @@ class PdfSplitterController extends Controller
         }
         
         return $pages;
+    }
+
+    public function cleanup($sessionId)
+    {
+        try {
+            // Удаляем PDF
+            Storage::deleteDirectory("temp_pdfs/{$sessionId}");
+            
+            // Удаляем миниатюры
+            Storage::disk('public')->deleteDirectory("temp_thumbs/{$sessionId}");
+            
+            // Удаляем собранные документы
+            Storage::disk('public')->deleteDirectory("temp_merged/{$sessionId}");
+            
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Ошибка очистки файлов сессии {$sessionId}: " . $e->getMessage());
+            return false;
+        }
     }
 }

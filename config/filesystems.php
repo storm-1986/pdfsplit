@@ -14,6 +14,7 @@ return [
     */
 
     'default' => env('FILESYSTEM_DISK', 'local'),
+    'temp_ttl_hours' => env('FILESYSTEM_TEMP_TTL', 24), // Только здесь задаем TTL
 
     /*
     |--------------------------------------------------------------------------

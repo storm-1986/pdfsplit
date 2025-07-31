@@ -7,9 +7,21 @@ class PdfUploader {
         this.thumbnailsContainer = document.getElementById('thumbnails-container');
         this.backButton = document.getElementById('back-button');
         this.submitButton = this.uploadForm?.querySelector('button[type="submit"]');
-        
+        this.sessionId = null; // Добавляем хранение sessionId
+
         if (this.uploadForm) {
             this.init();
+        }
+        
+        // Обработчик для очистки при закрытии страницы
+        window.addEventListener('beforeunload', () => this.cleanupSession());
+        
+        // Обработчик для кнопки "Назад"
+        if (this.backButton) {
+            this.backButton.addEventListener('click', () => {
+                this.cleanupSession();
+                this.resetForm();
+            });
         }
     }
     
@@ -48,7 +60,7 @@ class PdfUploader {
     
     showLoading(show) {
         if (!this.submitButton) return;
-        
+
         if (show) {
             this.submitButton.innerHTML = `
                 <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -63,8 +75,26 @@ class PdfUploader {
             this.submitButton.disabled = false;
         }
     }
+
+    async cleanupSession() {
+        if (!this.sessionId) return;
+        
+        try {
+            await fetch('/pdf/cleanup', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ session_id: this.sessionId })
+            });
+        } catch (error) {
+            console.error('Ошибка при очистке сессии:', error);
+        }
+    }
     
     showResults(data) {
+        this.sessionId = data.session_id; // Сохраняем sessionId для очистки
         this.pdfTitle.textContent = `Страницы документа: ${data.original_name}`;
         this.thumbnailsContainer.innerHTML = '';
         
@@ -87,6 +117,7 @@ class PdfUploader {
     }
     
     resetForm() {
+        this.sessionId = null; // Сбрасываем sessionId
         this.previewContainer.classList.add('hidden');
         this.uploadContainer.classList.remove('hidden');
         this.uploadForm.reset();

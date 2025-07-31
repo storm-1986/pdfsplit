@@ -15,3 +15,4 @@ use Illuminate\Support\Facades\Route;
 */
 Route::get('/', [PdfSplitterController::class, 'showUploadForm'])->name('pdf.upload');
 Route::post('/', [PdfSplitterController::class, 'uploadAndSplit'])->name('pdf.process');
+Route::post('/pdf/cleanup', [PdfSplitterController::class, 'cleanup'])->name('pdf.cleanup');
