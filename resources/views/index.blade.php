@@ -25,16 +25,17 @@
     </form>
 </div>
 
-<div id="preview-container" class="hidden w-full p-4">
-    <div class="max-w-7xl mx-auto bg-white rounded-lg shadow-md p-6">
-        <div class="flex justify-between items-center mb-6">
+<div id="preview-container" class="hidden w-full">
+    <div class="w-full bg-white p-6 mx-auto px-4 sm:px-6 lg:px-8">
+        <!-- Фиксированная шапка с тенью -->
+        <div class="flex justify-between items-center mb-6 sticky top-0 bg-white z-10 py-4 px-4 border-b shadow-sm">
             <h2 id="pdf-title" class="text-2xl font-bold text-gray-800"></h2>
             <button id="back-button" class="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 px-4 rounded-md transition cursor-pointer">
                 ← Назад к загрузке
             </button>
         </div>
-        
-        <div id="thumbnails-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
+        <!-- Сетка миниатюр с отступами -->
+        <div id="thumbnails-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 px-2"></div>
     </div>
 </div>
 

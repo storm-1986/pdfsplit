@@ -94,26 +94,43 @@ class PdfUploader {
     }
     
     showResults(data) {
-        this.sessionId = data.session_id; // Сохраняем sessionId для очистки
-        this.pdfTitle.textContent = `Страницы документа: ${data.original_name}`;
-        this.thumbnailsContainer.innerHTML = '';
-        
-        data.pages.forEach(page => {
-            const thumbElement = document.createElement('div');
-            thumbElement.className = 'border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer';
-            thumbElement.innerHTML = `
-                <img src="${page.image_url}" 
-                     alt="Страница ${page.number}" 
-                     class="w-full h-auto">
-                <div class="p-2 text-center bg-gray-50 border-t">
-                    <span class="text-sm font-medium text-gray-700">Стр. ${page.number}</span>
-                </div>
-            `;
-            this.thumbnailsContainer.appendChild(thumbElement);
-        });
+        this.sessionId = data.session_id; // Сохраняем ID сессии
+        this.pdfTitle.textContent = data.original_name; // Устанавливаем название
         
         this.uploadContainer.classList.add('hidden');
         this.previewContainer.classList.remove('hidden');
+        
+        this.thumbnailsContainer.innerHTML = data.pages.map(page => `
+            <a href="${page.image_url}" 
+            data-glightbox="title: Страница ${page.number}"
+            class="block border rounded overflow-hidden hover:shadow-md transition">
+                <img src="${page.image_url}" 
+                    alt="Страница ${page.number}"
+                    class="w-full h-67 object-cover">
+                <div class="p-2 text-center bg-gray-50 border-t">
+                    <span class="text-sm font-medium">Стр. ${page.number}</span>
+                </div>
+            </a>
+        `).join('');
+
+        // Адаптивное количество колонок
+        const updateColumns = () => {
+            const width = window.innerWidth;
+            const cols = width > 1536 ? 7 : 
+                        width > 1280 ? 6 :
+                        width > 1024 ? 5 :
+                        width > 768 ? 4 :
+                        width > 640 ? 3 : 2;
+            
+            this.thumbnailsContainer.className = `grid grid-cols-${cols} gap-4 px-2`;
+        };
+        
+        updateColumns();
+        window.addEventListener('resize', updateColumns);
+
+        if (window._glightbox) {
+            window._glightbox.reload();
+        }
     }
     
     resetForm() {
