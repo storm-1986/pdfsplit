@@ -7,21 +7,9 @@ class PdfUploader {
         this.thumbnailsContainer = document.getElementById('thumbnails-container');
         this.backButton = document.getElementById('back-button');
         this.submitButton = this.uploadForm?.querySelector('button[type="submit"]');
-        this.sessionId = null; // Добавляем хранение sessionId
 
         if (this.uploadForm) {
             this.init();
-        }
-        
-        // Обработчик для очистки при закрытии страницы
-        window.addEventListener('beforeunload', () => this.cleanupSession());
-        
-        // Обработчик для кнопки "Назад"
-        if (this.backButton) {
-            this.backButton.addEventListener('click', () => {
-                this.cleanupSession();
-                this.resetForm();
-            });
         }
     }
     
@@ -34,13 +22,15 @@ class PdfUploader {
         e.preventDefault();
         
         const formData = new FormData(this.uploadForm);
-        
         this.showLoading(true);
         
         try {
             const response = await fetch(this.uploadForm.action, {
                 method: 'POST',
-                body: formData
+                body: formData,
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value
+                }
             });
             
             const data = await response.json();
@@ -75,38 +65,20 @@ class PdfUploader {
             this.submitButton.disabled = false;
         }
     }
-
-    async cleanupSession() {
-        if (!this.sessionId) return;
-        
-        try {
-            await fetch('/pdf/cleanup', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                },
-                body: JSON.stringify({ session_id: this.sessionId })
-            });
-        } catch (error) {
-            console.error('Ошибка при очистке сессии:', error);
-        }
-    }
     
     showResults(data) {
-        this.sessionId = data.session_id; // Сохраняем ID сессии
-        this.pdfTitle.textContent = data.original_name; // Устанавливаем название
+        this.pdfTitle.textContent = data.original_name;
         
         this.uploadContainer.classList.add('hidden');
         this.previewContainer.classList.remove('hidden');
         
         this.thumbnailsContainer.innerHTML = data.pages.map(page => `
             <a href="${page.image_url}" 
-            data-glightbox="title: Страница ${page.number}"
-            class="block border rounded overflow-hidden hover:shadow-md transition">
+               data-glightbox="title: Страница ${page.number}"
+               class="block border rounded overflow-hidden hover:shadow-md transition">
                 <img src="${page.image_url}" 
-                    alt="Страница ${page.number}"
-                    class="w-full h-67 object-cover">
+                     alt="Страница ${page.number}"
+                     class="w-full h-67 object-cover">
                 <div class="p-2 text-center bg-gray-50 border-t">
                     <span class="text-sm font-medium">Стр. ${page.number}</span>
                 </div>
@@ -134,7 +106,6 @@ class PdfUploader {
     }
     
     resetForm() {
-        this.sessionId = null; // Сбрасываем sessionId
         this.previewContainer.classList.add('hidden');
         this.uploadContainer.classList.remove('hidden');
         this.uploadForm.reset();
@@ -145,7 +116,6 @@ class PdfUploader {
     }
 }
 
-// Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', () => {
     new PdfUploader();
 });
