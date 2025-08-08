@@ -110,3 +110,25 @@
     font-size: 1rem;
     font-weight: 500;
 }
+
+.document-title {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 0.5rem;
+    transition: color 0.2s ease;
+}
+
+.document-title:hover {
+    color: #111827;
+}
+
+.range-container {
+    transition: all 0.3s ease;
+    opacity: 1;
+}
+
+.range-container.removing {
+    opacity: 0;
+    transform: translateX(-10px);
+}

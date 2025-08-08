@@ -268,13 +268,15 @@ class PdfSplitter {
         const rangeElement = document.createElement('div');
         rangeElement.className = 'space-y-2 bg-white p-4 rounded-lg border';
         rangeElement.innerHTML = `
-            <div class="flex justify-between items-center">
-                <h4 class="font-medium text-gray-700">Документ ${docNumber}</h4>
-                <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                    </svg>
-                </button>
+            <div class="range-container">
+                <div class="flex justify-between items-center">
+                    <h4 class="document-title">Документ ${docNumber}</h4>
+                    <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="flex items-center space-x-3">
                 <span class="text-gray-700 whitespace-nowrap">От страницы</span>
@@ -324,11 +326,30 @@ class PdfSplitter {
     }
 
     renumberDocuments() {
-        const ranges = this.rangesContainer.children;
-        Array.from(ranges).forEach((range, index) => {
-            const title = range.querySelector('h4');
-            if (title) {
-                title.textContent = `Документ ${index + 1}`;
+        // Получаем все контейнеры диапазонов
+        const rangeContainers = this.rangesContainer.querySelectorAll('.range-container');
+        
+        // Проверяем наличие диапазонов
+        if (!rangeContainers || rangeContainers.length === 0) return;
+
+        // Перебираем и переименовываем с проверкой каждого элемента
+        Array.from(rangeContainers).forEach((container, index) => {
+            try {
+                const titleElement = container.querySelector('.document-title');
+                
+                // Проверяем существование элемента и актуальность названия
+                if (titleElement) {
+                    const newTitle = `Документ ${index + 1}`;
+                    
+                    // Обновляем только если название изменилось
+                    if (titleElement.textContent !== newTitle) {
+                        titleElement.textContent = newTitle;
+                    }
+                } else {
+                    console.warn('Элемент заголовка не найден в диапазоне', container);
+                }
+            } catch (error) {
+                console.error('Ошибка при переименовании документа:', error);
             }
         });
     }
