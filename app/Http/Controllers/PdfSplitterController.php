@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\PdfToImage\Pdf;
+use ZipArchive;
+use Imagick;
 
 class PdfSplitterController extends Controller
 {
@@ -22,21 +24,28 @@ class PdfSplitterController extends Controller
         try {
             $pdfFile = $request->file('pdf');
             $originalName = $pdfFile->getClientOriginalName();
-            $tempDir = 'temp_pdfs/' . Str::random(20);
+            $sessionId = Str::random(20); // Генерируем уникальный ID сессии
+            $tempDir = 'temp_pdfs/' . $sessionId;
             
             // Сохраняем PDF
             $pdfPath = $pdfFile->storeAs($tempDir, $originalName);
+            $absolutePath = storage_path('app/' . $pdfPath);
             
             // Генерируем миниатюры
-            $pages = $this->generateThumbnails(
-                storage_path('app/' . $pdfPath),
-                basename($tempDir)
-            );
+            $pages = $this->generateThumbnails($absolutePath, $sessionId);
+
+            Log::debug('Returning response', [
+                'session_id' => $sessionId,
+                'pdf_path' => $pdfPath,
+                'original_name' => $originalName
+            ]);
 
             return response()->json([
                 'success' => true,
                 'original_name' => $originalName,
-                'pages' => $pages
+                'pages' => $pages,
+                'session_id' => $sessionId, // Возвращаем session_id клиенту
+                'pdf_path' => $pdfPath // Возвращаем путь к файлу
             ]);
             
         } catch (\Exception $e) {
@@ -71,5 +80,169 @@ class PdfSplitterController extends Controller
         }
         
         return $pages;
+    }
+
+    public function downloadRanges(Request $request)
+    {
+        $request->validate([
+            'session_id' => 'required|string',
+            'pdf_path' => 'required|string',
+            'ranges' => 'required|array',
+            'ranges.*' => 'string|regex:/^(\d+(-\d+)?)(,\d+(-\d+)?)*$/',
+        ]);
+
+        try {
+            $originalPath = storage_path('app/' . $request->pdf_path);
+            
+            if (!file_exists($originalPath)) {
+                throw new \Exception("Исходный PDF файл не найден");
+            }
+
+            $pdf = new Pdf($originalPath);
+            $totalPages = $pdf->getNumberOfPages();
+            
+            if ($totalPages < 1) {
+                throw new \Exception("PDF не содержит страниц");
+            }
+
+            // Создаем временную директорию
+            $tempDir = "temp_split/{$request->session_id}";
+            Storage::makeDirectory($tempDir);
+            
+            $zip = new ZipArchive();
+            $zipPath = storage_path("app/public/temp_zips/{$request->session_id}.zip");
+            
+            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                throw new \Exception("Не удалось создать ZIP архив");
+            }
+
+            foreach ($request->ranges as $range) {
+                $pages = $this->parseRange($range, $totalPages);
+                
+                if (empty($pages)) {
+                    Log::warning("Пропущен пустой диапазон: $range");
+                    continue;
+                }
+
+                $rangeFileName = "range_{$range}.pdf";
+                $tempPdfPath = storage_path("app/{$tempDir}/{$rangeFileName}");
+                
+                $this->createPdfFromRange($originalPath, $pages, $tempPdfPath);
+                
+                if (!file_exists($tempPdfPath)) {
+                    throw new \Exception("Не удалось создать PDF для диапазона $range");
+                }
+                
+                $zip->addFile($tempPdfPath, $rangeFileName);
+            }
+
+            if ($zip->numFiles == 0) {
+                throw new \Exception("Не создано ни одного PDF файла");
+            }
+
+            $zip->close();
+            Storage::deleteDirectory($tempDir);
+
+            return response()->download($zipPath)
+                ->deleteFileAfterSend(true);
+
+        } catch (\Exception $e) {
+            // Возвращаем JSON только при ошибках
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    protected function parseRange($range, $maxPages)
+    {
+        $pages = [];
+        $parts = explode(',', $range);
+        
+        foreach ($parts as $part) {
+            if (strpos($part, '-') !== false) {
+                [$start, $end] = explode('-', $part, 2);
+                $start = max(1, (int)$start);
+                $end = min($maxPages, (int)$end);
+                for ($i = $start; $i <= $end; $i++) {
+                    $pages[] = $i;
+                }
+            } else {
+                $page = (int)$part;
+                if ($page >= 1 && $page <= $maxPages) {
+                    $pages[] = $page;
+                }
+            }
+        }
+        
+        return array_unique($pages);
+    }
+
+    protected function createPdfFromRange($sourcePath, $pages, $outputPath)
+    {
+        if (!file_exists($sourcePath)) {
+            throw new \Exception("Исходный PDF не найден: $sourcePath");
+        }
+
+        $pdf = new Pdf($sourcePath);
+        $imagick = new Imagick();
+        $tempImages = [];
+
+        try {
+            foreach ($pages as $page) {
+                $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
+                
+                // Конвертируем страницу PDF в изображение
+                $pdf->setPage($page)
+                    ->setResolution(150)
+                    ->saveImage($tempImage);
+                
+                if (!file_exists($tempImage)) {
+                    throw new \Exception("Не удалось создать изображение для страницы $page");
+                }
+                
+                $tempImages[] = $tempImage;
+                
+                // Добавляем изображение в Imagick
+                $pageImage = new Imagick($tempImage);
+                $imagick->addImage($pageImage);
+                $pageImage->clear();
+            }
+
+            if ($imagick->getNumberImages() === 0) {
+                throw new \Exception("Не добавлено ни одной страницы");
+            }
+
+            // Конвертируем изображения обратно в PDF
+            $imagick->setImageFormat('pdf');
+            $imagick->writeImages($outputPath, true);
+
+        } catch (\Exception $e) {
+            throw new \Exception("Ошибка создания PDF: " . $e->getMessage());
+        } finally {
+            // Очистка временных файлов
+            foreach ($tempImages as $tempImage) {
+                if (file_exists($tempImage)) {
+                    unlink($tempImage);
+                }
+            }
+            $imagick->clear();
+        }
+    }
+
+    public function cleanup($sessionId)
+    {
+        try {
+            Storage::deleteDirectory("temp_pdfs/{$sessionId}");
+            Storage::disk('public')->deleteDirectory("temp_thumbs/{$sessionId}");
+            Storage::disk('public')->deleteDirectory("temp_merged/{$sessionId}");
+            Storage::disk('public')->delete("temp_zips/{$sessionId}.zip");
+            
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            Log::error("Ошибка очистки файлов сессии {$sessionId}: " . $e->getMessage());
+            return response()->json(['success' => false], 500);
+        }
     }
 }

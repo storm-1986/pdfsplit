@@ -16,6 +16,16 @@ class PdfSplitter {
         this.totalPages = 0;
         this.initEventListeners();
         this.setupDragAndDrop();
+
+        if (!this.splitButton) {
+            console.error('Элемент split-button не найден');
+            return;
+        }
+
+        if (!this.previewContainer) {
+            console.error('Элемент preview-container не найден');
+            return;
+        }
     }
 
     initEventListeners() {
@@ -202,6 +212,16 @@ class PdfSplitter {
     }
 
     showPreview(data) {
+        if (!data.session_id) {
+            console.error('Отсутствует session_id в данных');
+            return;
+        }
+        // Сохраняем данные PDF в контейнере
+        this.previewContainer.dataset.pdfInfo = JSON.stringify({
+            session_id: data.session_id,
+            pdf_path: data.pdf_path,  // Добавляем путь к файлу
+            original_name: data.original_name
+        });
         // Убираем центрирование у body
         document.body.classList.remove('justify-center');
         
@@ -392,32 +412,129 @@ class PdfSplitter {
         if (errorElement) errorElement.remove();
     }
 
-    handleSplit() {
-        const ranges = this.getRanges();
-        if (ranges.length === 0) {
-            alert('Должен оставаться хотя бы один диапазон');
-            return;
+    async handleSplit() {
+        const originalHtml = this.splitButton.innerHTML;
+        this.splitButton.disabled = true;
+        this.splitButton.innerHTML = `Обработка...`;
+
+        try {
+            const pdfData = JSON.parse(this.previewContainer.dataset.pdfInfo);
+            const ranges = this.getRanges();
+            
+            const response = await fetch(this.previewContainer.dataset.downloadUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken
+                },
+                body: JSON.stringify({
+                    session_id: pdfData.session_id,
+                    pdf_path: pdfData.pdf_path,
+                    ranges: ranges,
+                    original_name: pdfData.original_name
+                })
+            });
+
+            // Проверяем тип ответа
+            const contentType = response.headers.get('content-type');
+            
+            if (contentType.includes('application/json')) {
+                // Если это JSON (ошибка)
+                const error = await response.json();
+                throw new Error(error.message || 'Ошибка сервера');
+            } else if (contentType.includes('application/zip')) {
+                // Если это ZIP архив - скачиваем
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = pdfData.original_name.replace('.pdf', '') + '_ranges.zip';
+                document.body.appendChild(a);
+                a.click();
+                
+                // Очистка через 100 мс
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 100);
+            } else {
+                throw new Error(`Неожиданный тип ответа: ${contentType}`);
+            }
+
+        } catch (error) {
+            console.error('Split Error:', error);
+            this.showSplitError(
+                error.message.startsWith('PK') ? 
+                'Ошибка при создании архива' : 
+                error.message
+            );
+        } finally {
+            this.splitButton.disabled = false;
+            this.splitButton.innerHTML = originalHtml;
+        }
+    }
+
+    // Новый метод для генерации имени архива
+    generateArchiveName(fileId) {
+        const now = new Date();
+        const timestamp = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}-${now.getMinutes().toString().padStart(2, '0')}`;
+        return `pdf_ranges_${fileId}_${timestamp}.zip`;
+    }
+
+    // Новый метод для показа ошибок при разделении
+    showSplitError(message) {
+        // Создаем или находим контейнер для ошибок
+        let errorContainer = document.getElementById('split-error-container');
+        if (!errorContainer) {
+            errorContainer = document.createElement('div');
+            errorContainer.id = 'split-error-container';
+            errorContainer.className = 'mt-4 p-4 bg-red-50 text-red-600 rounded';
+            this.previewContainer.appendChild(errorContainer);
         }
         
-        console.log('Отправка диапазонов:', {
-            ranges: ranges,
-            merge_all: document.getElementById('merge-all').checked
-        });
+        errorContainer.textContent = message;
+        
+        // Автоматическое скрытие через 5 секунд
+        setTimeout(() => {
+            errorContainer.remove();
+        }, 5000);
     }
 
     getRanges() {
         const ranges = [];
-        const fromInputs = this.rangesContainer.querySelectorAll('.from-input');
-        const toInputs = this.rangesContainer.querySelectorAll('.to-input');
         
-        for (let i = 0; i < fromInputs.length; i++) {
-            const from = parseInt(fromInputs[i].value);
-            const to = parseInt(toInputs[i].value);
-            
-            if (from && to && from <= to) {
-                ranges.push({ from, to });
-            }
+        // Проверяем наличие контейнера диапазонов
+        if (!this.rangesContainer) {
+            console.error('Контейнер диапазонов не найден');
+            return ranges;
         }
+
+        const rangeElements = this.rangesContainer.children;
+        
+        Array.from(rangeElements).forEach(rangeEl => {
+            try {
+                const fromInput = rangeEl.querySelector('.from-input');
+                const toInput = rangeEl.querySelector('.to-input');
+                
+                if (!fromInput || !toInput) {
+                    console.warn('Не найдены поля ввода в диапазоне');
+                    return;
+                }
+                
+                const from = parseInt(fromInput.value);
+                const to = parseInt(toInput.value);
+                
+                if (!isNaN(from) && !isNaN(to)) {
+                    if (from <= to) {
+                        ranges.push(`${from}-${to}`);
+                    } else {
+                        console.warn(`Некорректный диапазон: ${from} > ${to}`);
+                    }
+                }
+            } catch (e) {
+                console.error('Ошибка обработки диапазона:', e);
+            }
+        });
         
         return ranges;
     }

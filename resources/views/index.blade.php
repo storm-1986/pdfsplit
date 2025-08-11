@@ -33,7 +33,7 @@
     </form>
 </div>
 
-<div id="preview-container" class="hidden w-full mx-auto px-4 py-6">
+<div id="preview-container" data-download-url="{{ route('pdf.download-ranges') }}" data-csrf-token="{{ csrf_token() }}" class="hidden w-full mx-auto px-4 py-6">
     <div class="flex justify-between items-center mb-4">
         <h2 id="pdf-title" class="text-xl font-bold text-gray-800"></h2>
         <button id="back-button" type="button" class="text-blue-500 hover:text-blue-700">
