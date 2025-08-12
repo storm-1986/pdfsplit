@@ -84,11 +84,14 @@ class PdfSplitterController extends Controller
 
     public function downloadRanges(Request $request)
     {
-        $request->validate([
+    // Убедимся, что запрос ожидает JSON
+    if ($request->wantsJson() || $request->isJson()) {
+        $validated = $request->validate([
             'session_id' => 'required|string',
             'pdf_path' => 'required|string',
             'ranges' => 'required|array',
             'ranges.*' => 'string|regex:/^(\d+(-\d+)?)(,\d+(-\d+)?)*$/',
+            'original_name' => 'required|string'
         ]);
 
         try {
@@ -143,16 +146,28 @@ class PdfSplitterController extends Controller
             $zip->close();
             Storage::deleteDirectory($tempDir);
 
-            return response()->download($zipPath)
-                ->deleteFileAfterSend(true);
+            // Вместо возврата файла возвращаем JSON с URL для скачивания
+            $publicZipPath = "temp_zips/{$request->session_id}.zip";
+            
+            return response()->json([
+                'success' => true,
+                'download_url' => asset("storage/{$publicZipPath}"),
+                'filename' => pathinfo($validated['original_name'], PATHINFO_FILENAME) . '_ranges.zip'
+            ]);
 
         } catch (\Exception $e) {
-            // Возвращаем JSON только при ошибках
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+        // Для не-JSON запросов возвращаем ошибку
+        return response()->json([
+            'success' => false,
+            'message' => 'Требуется JSON запрос'
+        ], 400);
     }
 
     protected function parseRange($range, $maxPages)

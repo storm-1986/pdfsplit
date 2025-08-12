@@ -2,7 +2,7 @@
 
 @section('content')
 <div id="upload-container" class="bg-white rounded-lg shadow-md p-8 w-full max-w-md mx-auto">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Разделить PDF</h1>
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Загрузить документ</h1>
     
     <form id="upload-form" action="{{ route('pdf.process') }}" method="POST" enctype="multipart/form-data" novalidate>
         @csrf
@@ -36,7 +36,7 @@
 <div id="preview-container" data-download-url="{{ route('pdf.download-ranges') }}" data-csrf-token="{{ csrf_token() }}" class="hidden w-full mx-auto px-4 py-6">
     <div class="flex justify-between items-center mb-4">
         <h2 id="pdf-title" class="text-xl font-bold text-gray-800"></h2>
-        <button id="back-button" type="button" class="text-blue-500 hover:text-blue-700">
+        <button id="back-button" type="button" class="text-blue-500 hover:text-blue-700 cursor-pointer">
             ← Выбрать другой файл
         </button>
     </div>

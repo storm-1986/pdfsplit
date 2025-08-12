@@ -155,7 +155,10 @@ class PdfSplitter {
         const originalButtonText = this.uploadButton.textContent;
         this.uploadButton.disabled = true;
         this.uploadButton.innerHTML = `
-            <span class="inline-block animate-spin mr-2">↻</span>
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
             Загрузка...
         `;
 
@@ -415,17 +418,26 @@ class PdfSplitter {
     async handleSplit() {
         const originalHtml = this.splitButton.innerHTML;
         this.splitButton.disabled = true;
-        this.splitButton.innerHTML = `Обработка...`;
+        this.splitButton.innerHTML = `
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Обработка...
+        `;
 
         try {
             const pdfData = JSON.parse(this.previewContainer.dataset.pdfInfo);
             const ranges = this.getRanges();
             
-            const response = await fetch(this.previewContainer.dataset.downloadUrl, {
+            // Используем правильный URL из ваших маршрутов
+            const response = await fetch('/pdf/download-ranges', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
                 },
                 body: JSON.stringify({
                     session_id: pdfData.session_id,
@@ -435,43 +447,61 @@ class PdfSplitter {
                 })
             });
 
-            // Проверяем тип ответа
+            // Проверяем content-type перед парсингом
             const contentType = response.headers.get('content-type');
-            
-            if (contentType.includes('application/json')) {
-                // Если это JSON (ошибка)
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка сервера');
-            } else if (contentType.includes('application/zip')) {
-                // Если это ZIP архив - скачиваем
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = pdfData.original_name.replace('.pdf', '') + '_ranges.zip';
-                document.body.appendChild(a);
-                a.click();
-                
-                // Очистка через 100 мс
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                }, 100);
-            } else {
-                throw new Error(`Неожиданный тип ответа: ${contentType}`);
+            if (!contentType || !contentType.includes('application/json')) {
+                const text = await response.text();
+                throw new Error(`Ожидался JSON, получен: ${text.substring(0, 100)}...`);
             }
+
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.message || 'Ошибка сервера');
+            }
+
+            // Показываем кнопку скачивания
+            this.showDownloadButton(data.download_url, data.filename);
 
         } catch (error) {
             console.error('Split Error:', error);
             this.showSplitError(
-                error.message.startsWith('PK') ? 
-                'Ошибка при создании архива' : 
-                error.message
+                error.message.includes('<!DOCTYPE html>') 
+                    ? 'Сервер вернул HTML вместо JSON (проверьте URL)' 
+                    : error.message
             );
         } finally {
             this.splitButton.disabled = false;
             this.splitButton.innerHTML = originalHtml;
         }
+    }
+
+    showDownloadButton(downloadUrl, filename) {
+        // Удаляем предыдущую кнопку, если есть
+        const oldButton = document.getElementById('download-button-container');
+        if (oldButton) oldButton.remove();
+        
+        // Создаем контейнер для кнопки
+        const container = document.createElement('div');
+        container.id = 'download-button-container';
+        container.className = 'mt-4';
+        
+        // Создаем кнопку с такими же стилями как "Разделить PDF"
+        const downloadBtn = document.createElement('a');
+        downloadBtn.href = downloadUrl;
+        downloadBtn.className = 'flex items-center justify-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition ease-in-out duration-150';
+        downloadBtn.download = filename;
+        downloadBtn.innerHTML = `
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            </svg>
+            Скачать файлы
+        `;
+        
+        container.appendChild(downloadBtn);
+        
+        // Вставляем после кнопки "Разделить PDF"
+        this.splitButton.parentNode.insertBefore(container, this.splitButton.nextSibling);
     }
 
     // Новый метод для генерации имени архива
