@@ -84,18 +84,18 @@ class PdfSplitterController extends Controller
 
     public function downloadRanges(Request $request)
     {
-    // Убедимся, что запрос ожидает JSON
-    if ($request->wantsJson() || $request->isJson()) {
-        $validated = $request->validate([
+        $request->validate([
             'session_id' => 'required|string',
             'pdf_path' => 'required|string',
             'ranges' => 'required|array',
-            'ranges.*' => 'string|regex:/^(\d+(-\d+)?)(,\d+(-\d+)?)*$/',
+            'ranges.*.range' => 'required|string|regex:/^\d+(-\d+)?$/',
+            'ranges.*.name' => 'nullable|string|max:100', // Принимаем, но не используем
             'original_name' => 'required|string'
         ]);
 
         try {
             $originalPath = storage_path('app/' . $request->pdf_path);
+            $originalName = pathinfo($request->original_name, PATHINFO_FILENAME);
             
             if (!file_exists($originalPath)) {
                 throw new \Exception("Исходный PDF файл не найден");
@@ -119,7 +119,10 @@ class PdfSplitterController extends Controller
                 throw new \Exception("Не удалось создать ZIP архив");
             }
 
-            foreach ($request->ranges as $range) {
+            foreach ($request->ranges as $rangeData) {
+                $range = $rangeData['range']; // Используем только диапазон
+                // $name = $rangeData['name']; // Пока не используем (но доступно)
+                
                 $pages = $this->parseRange($range, $totalPages);
                 
                 if (empty($pages)) {
@@ -127,14 +130,10 @@ class PdfSplitterController extends Controller
                     continue;
                 }
 
-                $rangeFileName = "range_{$range}.pdf";
+                $rangeFileName = "{$originalName}_range_{$range}.pdf";
                 $tempPdfPath = storage_path("app/{$tempDir}/{$rangeFileName}");
                 
                 $this->createPdfFromRange($originalPath, $pages, $tempPdfPath);
-                
-                if (!file_exists($tempPdfPath)) {
-                    throw new \Exception("Не удалось создать PDF для диапазона $range");
-                }
                 
                 $zip->addFile($tempPdfPath, $rangeFileName);
             }
@@ -146,13 +145,11 @@ class PdfSplitterController extends Controller
             $zip->close();
             Storage::deleteDirectory($tempDir);
 
-            // Вместо возврата файла возвращаем JSON с URL для скачивания
             $publicZipPath = "temp_zips/{$request->session_id}.zip";
-            
             return response()->json([
                 'success' => true,
                 'download_url' => asset("storage/{$publicZipPath}"),
-                'filename' => pathinfo($validated['original_name'], PATHINFO_FILENAME) . '_ranges.zip'
+                'filename' => "{$originalName}_ranges.zip" // Также обновляем имя ZIP-архива
             ]);
 
         } catch (\Exception $e) {
@@ -161,13 +158,6 @@ class PdfSplitterController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
-    }
-
-        // Для не-JSON запросов возвращаем ошибку
-        return response()->json([
-            'success' => false,
-            'message' => 'Требуется JSON запрос'
-        ], 400);
     }
 
     protected function parseRange($range, $maxPages)

@@ -273,7 +273,6 @@ class PdfSplitter {
     }
 
     addRange(from = null, to = null) {
-        // Определяем параметры нового диапазона
         const ranges = this.getRanges();
         const lastRange = ranges[ranges.length - 1];
         const docNumber = ranges.length + 1;
@@ -293,21 +292,24 @@ class PdfSplitter {
         rangeElement.innerHTML = `
             <div class="range-container">
                 <div class="flex justify-between items-center">
-                    <h4 class="document-title">Документ ${docNumber}</h4>
+                    <input type="text" 
+                        value="Документ ${docNumber}" 
+                        class="document-name border rounded px-2 py-1 w-40 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                         </svg>
                     </button>
                 </div>
-            </div>
-            <div class="flex items-center space-x-3">
-                <span class="text-gray-700 whitespace-nowrap">От страницы</span>
-                <input type="number" min="1" max="${this.totalPages}" value="${from}" 
-                    class="range-input from-input w-16 px-2 py-1 border rounded">
-                <span class="text-gray-700 whitespace-nowrap">к</span>
-                <input type="number" min="1" max="${this.totalPages}" value="${to}" 
-                    class="range-input to-input w-16 px-2 py-1 border rounded">
+                <div class="flex items-center space-x-3 mt-2">
+                    <span class="text-gray-700 whitespace-nowrap">От страницы</span>
+                    <input type="number" min="1" max="${this.totalPages}" value="${from}" 
+                        class="range-input from-input w-16 px-2 py-1 border rounded">
+                    <span class="text-gray-700 whitespace-nowrap">к</span>
+                    <input type="number" min="1" max="${this.totalPages}" value="${to}" 
+                        class="range-input to-input w-16 px-2 py-1 border rounded">
+                </div>
             </div>
         `;
         
@@ -428,9 +430,8 @@ class PdfSplitter {
 
         try {
             const pdfData = JSON.parse(this.previewContainer.dataset.pdfInfo);
-            const ranges = this.getRanges();
+            const ranges = this.getRanges(); // Теперь получаем массив объектов
             
-            // Используем правильный URL из ваших маршрутов
             const response = await fetch('/pdf/download-ranges', {
                 method: 'POST',
                 headers: {
@@ -442,7 +443,7 @@ class PdfSplitter {
                 body: JSON.stringify({
                     session_id: pdfData.session_id,
                     pdf_path: pdfData.pdf_path,
-                    ranges: ranges,
+                    ranges: ranges, // Теперь передаем объекты с range и name
                     original_name: pdfData.original_name
                 })
             });
@@ -533,32 +534,24 @@ class PdfSplitter {
     getRanges() {
         const ranges = [];
         
-        // Проверяем наличие контейнера диапазонов
-        if (!this.rangesContainer) {
-            console.error('Контейнер диапазонов не найден');
-            return ranges;
-        }
-
         const rangeElements = this.rangesContainer.children;
         
         Array.from(rangeElements).forEach(rangeEl => {
             try {
                 const fromInput = rangeEl.querySelector('.from-input');
                 const toInput = rangeEl.querySelector('.to-input');
-                
-                if (!fromInput || !toInput) {
-                    console.warn('Не найдены поля ввода в диапазоне');
-                    return;
-                }
+                const nameInput = rangeEl.querySelector('.document-name');
                 
                 const from = parseInt(fromInput.value);
                 const to = parseInt(toInput.value);
+                const name = nameInput.value.trim(); // Получаем введенное название
                 
                 if (!isNaN(from) && !isNaN(to)) {
                     if (from <= to) {
-                        ranges.push(`${from}-${to}`);
-                    } else {
-                        console.warn(`Некорректный диапазон: ${from} > ${to}`);
+                        ranges.push({
+                            range: `${from}-${to}`, // Диапазон страниц (как было)
+                            name: name // Новое поле - название документа
+                        });
                     }
                 }
             } catch (e) {
