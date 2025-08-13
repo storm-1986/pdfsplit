@@ -291,7 +291,7 @@ class PdfSplitter {
         rangeElement.className = 'space-y-2 bg-white p-4 rounded-lg border';
         rangeElement.innerHTML = `
             <div class="range-container">
-                <div class="flex justify-between items-center">
+                <div class="flex justify-between items-center mb-2">
                     <input type="text" 
                         value="Документ ${docNumber}" 
                         class="document-name border rounded px-2 py-1 w-40 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -302,7 +302,17 @@ class PdfSplitter {
                         </svg>
                     </button>
                 </div>
-                <div class="flex items-center space-x-3 mt-2">
+                <div class="flex items-center space-x-3 mb-2">
+                    <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                        <option value="14">Протокол к договору</option>
+                        <option value="15">Приложение к договору</option>
+                        <option value="16">Доп.соглашение</option>
+                        <option value="91">Договор с покупателем</option>
+                        <option value="93">Письма</option>
+                        <option value="134" selected>Прочие документы</option>
+                    </select>
+                </div>
+                <div class="flex items-center space-x-3">
                     <span class="text-gray-700 whitespace-nowrap">От страницы</span>
                     <input type="number" min="1" max="${this.totalPages}" value="${from}" 
                         class="range-input from-input w-16 px-2 py-1 border rounded">
@@ -430,7 +440,7 @@ class PdfSplitter {
 
         try {
             const pdfData = JSON.parse(this.previewContainer.dataset.pdfInfo);
-            const ranges = this.getRanges(); // Теперь получаем массив объектов
+            const ranges = this.getRanges(); // Теперь получаем объекты с range, name и type
             
             const response = await fetch('/pdf/download-ranges', {
                 method: 'POST',
@@ -443,7 +453,7 @@ class PdfSplitter {
                 body: JSON.stringify({
                     session_id: pdfData.session_id,
                     pdf_path: pdfData.pdf_path,
-                    ranges: ranges, // Теперь передаем объекты с range и name
+                    ranges: ranges, // Теперь передаем объекты с type
                     original_name: pdfData.original_name
                 })
             });
@@ -541,16 +551,19 @@ class PdfSplitter {
                 const fromInput = rangeEl.querySelector('.from-input');
                 const toInput = rangeEl.querySelector('.to-input');
                 const nameInput = rangeEl.querySelector('.document-name');
+                const typeSelect = rangeEl.querySelector('.document-type');
                 
                 const from = parseInt(fromInput.value);
                 const to = parseInt(toInput.value);
-                const name = nameInput.value.trim(); // Получаем введенное название
+                const name = nameInput.value.trim();
+                const docType = typeSelect.value; // Получаем выбранное значение типа документа
                 
                 if (!isNaN(from) && !isNaN(to)) {
                     if (from <= to) {
                         ranges.push({
-                            range: `${from}-${to}`, // Диапазон страниц (как было)
-                            name: name // Новое поле - название документа
+                            range: `${from}-${to}`,
+                            name: name,
+                            type: docType // Добавляем тип документа
                         });
                     }
                 }

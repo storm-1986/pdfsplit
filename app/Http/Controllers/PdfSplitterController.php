@@ -89,7 +89,8 @@ class PdfSplitterController extends Controller
             'pdf_path' => 'required|string',
             'ranges' => 'required|array',
             'ranges.*.range' => 'required|string|regex:/^\d+(-\d+)?$/',
-            'ranges.*.name' => 'nullable|string|max:100', // Принимаем, но не используем
+            'ranges.*.name' => 'nullable|string|max:100',
+            'ranges.*.type' => 'required|string|in:14,15,16,91,93,134', // Валидация типа документа
             'original_name' => 'required|string'
         ]);
 
@@ -122,6 +123,7 @@ class PdfSplitterController extends Controller
             foreach ($request->ranges as $rangeData) {
                 $range = $rangeData['range']; // Используем только диапазон
                 // $name = $rangeData['name']; // Пока не используем (но доступно)
+                // $type = $rangeData['type']; // Получаем тип документа (пока не используем)
                 
                 $pages = $this->parseRange($range, $totalPages);
                 
