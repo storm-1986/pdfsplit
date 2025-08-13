@@ -1,5 +1,6 @@
 class PdfSplitter {
     constructor() {
+        this.uploadedDocuments = [];
         this.uploadForm = document.getElementById('upload-form');
         this.fileInput = document.getElementById('pdf');
         this.previewContainer = document.getElementById('preview-container');
@@ -43,18 +44,9 @@ class PdfSplitter {
         const uploadArea = document.getElementById('upload-area');
         if (!uploadArea) return;
 
-        // Обработчики событий
-        const highlight = () => {
-            uploadArea.classList.add('border-blue-500', 'bg-blue-50');
-            uploadArea.classList.remove('border-gray-300');
-        };
+        const highlight = () => uploadArea.classList.add('border-blue-500', 'bg-blue-50');
+        const unhighlight = () => uploadArea.classList.remove('border-blue-500', 'bg-blue-50');
 
-        const unhighlight = () => {
-            uploadArea.classList.remove('border-blue-500', 'bg-blue-50');
-            uploadArea.classList.add('border-gray-300');
-        };
-
-        // События drag and drop
         ['dragenter', 'dragover'].forEach(event => {
             uploadArea.addEventListener(event, (e) => {
                 e.preventDefault();
@@ -69,17 +61,15 @@ class PdfSplitter {
             });
         });
 
-        // Обработка сброса файла
         uploadArea.addEventListener('drop', (e) => {
-            const file = e.dataTransfer.files[0];
-            if (file && file.type === 'application/pdf') {
+            const files = e.dataTransfer.files;
+            const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
+            
+            if (pdfFiles.length > 0) {
                 this.fileInput.files = e.dataTransfer.files;
-                this.showSelectedFile(file.name);
-                if (this.uploadButton) {
-                    this.uploadButton.disabled = false;
-                }
+                this.showSelectedFiles(pdfFiles); // Используем новый метод
+                this.uploadButton.disabled = false;
                 
-                // Визуальная обратная связь об успешной загрузке
                 uploadArea.classList.add('border-green-500');
                 setTimeout(() => uploadArea.classList.remove('border-green-500'), 1000);
             }
@@ -87,34 +77,24 @@ class PdfSplitter {
     }
 
     handleFileChange(e) {
-        const file = e.target.files[0];
-        if (file) {
-            this.showSelectedFile(file.name);
-            if (this.uploadButton) {
-                this.uploadButton.disabled = false;
-            }
-            
-            // Удаляем сообщения об ошибках при успешном выборе
-            const errorElement = this.uploadForm.querySelector('.upload-error');
-            if (errorElement) errorElement.remove();
+        const files = e.target.files;
+        if (files.length > 0) {
+            this.showSelectedFiles(files);
+            this.uploadButton.disabled = false;
+            this.uploadForm.querySelector('.upload-error')?.remove();
         }
     }
 
-    showSelectedFile(filename) {
+    showSelectedFiles(files) {
         const container = document.querySelector('.file-info-container');
         const fileNameSpan = document.querySelector('.file-name');
         
         if (container && fileNameSpan) {
-            fileNameSpan.textContent = filename;
+            const names = Array.from(files).map(f => f.name).join(', ');
+            fileNameSpan.textContent = files.length > 1 
+                ? `${files.length} файлов: ${names}` 
+                : names;
             container.classList.remove('hidden');
-            container.style.animation = 'fadeIn 0.3s ease-out';
-            
-            // Также добавим визуальное подтверждение в области загрузки
-            const uploadArea = document.getElementById('upload-area');
-            if (uploadArea) {
-                uploadArea.classList.add('border-green-500');
-                setTimeout(() => uploadArea.classList.remove('border-green-500'), 1000);
-            }
         }
     }
 
@@ -136,59 +116,54 @@ class PdfSplitter {
 
     async handleSubmit(e) {
         e.preventDefault();
+        const files = Array.from(this.fileInput.files);
         
-        // Явная проверка выбора файла
-        if (!this.fileInput.files || this.fileInput.files.length === 0) {
-            this.showFileError('Пожалуйста, выберите PDF файл');
+        if (files.length === 0) {
+            this.showFileError('Пожалуйста, выберите PDF файлы');
             return;
         }
 
-        const file = this.fileInput.files[0]; // Добавляем получение файла
-        
-        // Проверка типа файла
-        if (file.type !== 'application/pdf') {
-            this.showFileError('Пожалуйста, выберите файл в формате PDF');
-            return;
-        }
-
-        // Блокируем кнопку на время загрузки
-        const originalButtonText = this.uploadButton.textContent;
+        const originalButtonHtml = this.uploadButton.innerHTML;
         this.uploadButton.disabled = true;
         this.uploadButton.innerHTML = `
             <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <!-- spinner icon -->
             </svg>
-            Загрузка...
+            Загрузка ${files.length} файлов...
         `;
 
         try {
-            const formData = new FormData();
-            formData.append('pdf', file);
-            formData.append('_token', document.querySelector('input[name="_token"]').value);
+            const uploadPromises = files.map(file => this.uploadFile(file));
+            const results = await Promise.all(uploadPromises);
+            
+            this.uploadedDocuments = results.filter(r => r.success);
+            if (this.uploadedDocuments.length > 0) {
+                this.showPreview();
+            } else {
+                throw new Error('Не удалось загрузить ни один файл');
+            }
+            
+        } catch (error) {
+            this.showFileError(error.message);
+        } finally {
+            this.uploadButton.disabled = false;
+            this.uploadButton.innerHTML = originalButtonHtml;
+        }
+    }
 
+    async uploadFile(file) {
+        const formData = new FormData();
+        formData.append('pdf', file);
+        formData.append('_token', document.querySelector('input[name="_token"]').value);
+
+        try {
             const response = await fetch(this.uploadForm.action, {
                 method: 'POST',
                 body: formData
             });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                this.showPreview(data);
-            } else {
-                throw new Error(data.message || 'Произошла ошибка при обработке файла');
-            }
+            return await response.json();
         } catch (error) {
-            console.error('Error:', error);
-            this.showFileError(error.message || 'Произошла ошибка при загрузке файла');
-        } finally {
-            this.uploadButton.disabled = false;
-            this.uploadButton.textContent = originalButtonText;
+            return { success: false, message: error.message };
         }
     }
 
@@ -214,62 +189,55 @@ class PdfSplitter {
         }, 3000);
     }
 
-    showPreview(data) {
-        if (!data.session_id) {
-            console.error('Отсутствует session_id в данных');
-            return;
-        }
-        // Сохраняем данные PDF в контейнере
-        this.previewContainer.dataset.pdfInfo = JSON.stringify({
-            session_id: data.session_id,
-            pdf_path: data.pdf_path,  // Добавляем путь к файлу
-            original_name: data.original_name
-        });
-        // Убираем центрирование у body
-        document.body.classList.remove('justify-center');
-        
-        // Показываем preview с отступами
+    showPreview() {
         this.previewContainer.classList.remove('hidden');
-        this.previewContainer.classList.add('px-4', 'py-6');
-
-        // Сохраняем данные документа
-        this.totalPages = data.pages.length;
-        this.pdfTitle.textContent = data.original_name;
-        
-        // Скрываем форму загрузки
         document.getElementById('upload-container').classList.add('hidden');
-
-        // Очищаем и создаём миниатюры страниц
-        this.thumbnailsContainer.innerHTML = '';
-        data.pages.forEach((page, index) => {
-            const thumb = document.createElement('a');
-            thumb.href = page.image_url;
-            thumb.dataset.glightbox = `title: Страница ${page.number}`;
-            thumb.className = 'block border rounded overflow-hidden hover:shadow-md transition';
-            thumb.innerHTML = `
-                <img src="${page.image_url}" 
-                    alt="Страница ${page.number}"
-                    class="w-full object-cover">
-                <div class="p-2 text-center bg-gray-50 border-t">
-                    <span class="text-sm font-medium">Стр. ${page.number}</span>
-                </div>
-            `;
-            this.thumbnailsContainer.appendChild(thumb);
+        
+        const previewContainer = document.getElementById('documents-preview');
+        previewContainer.innerHTML = '';
+        
+        let globalPageNum = 1;
+        
+        this.uploadedDocuments.forEach((doc, docIndex) => {
+            const docContainer = document.createElement('div');
+            docContainer.className = 'bg-white rounded-lg shadow-sm p-4 border border-gray-200 mb-6';
+            
+            // Заголовок документа
+            const title = document.createElement('h3');
+            title.className = 'text-lg font-semibold text-gray-800 mb-3';
+            title.textContent = `${docIndex + 1}. ${doc.original_name}`;
+            docContainer.appendChild(title);
+            
+            // Миниатюры страниц
+            const thumbsContainer = document.createElement('div');
+            thumbsContainer.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3';
+            
+            doc.pages.forEach(page => {
+                const thumb = document.createElement('div');
+                thumb.className = 'border rounded overflow-hidden hover:shadow-md transition';
+                thumb.innerHTML = `
+                    <a href="${page.image_url}" data-glightbox="title: Страница ${globalPageNum}">
+                        <img src="${page.image_url}" alt="Страница ${globalPageNum}" class="w-full h-full object-contain">
+                        <div class="p-2 text-center bg-gray-50 border-t">
+                            <span class="text-xs font-medium">Стр. ${globalPageNum++}</span>
+                        </div>
+                    </a>
+                `;
+                thumbsContainer.appendChild(thumb);
+            });
+            
+            docContainer.appendChild(thumbsContainer);
+            previewContainer.appendChild(docContainer);
         });
-
-        // Инициализируем/обновляем GLightbox
+        
+        this.totalPages = globalPageNum - 1;
+        this.rangesContainer.innerHTML = '';
+        this.addRange(1, this.totalPages);
+        
+        // Инициализация GLightbox
         if (window._glightbox) {
             window._glightbox.reload();
         }
-
-        // Очищаем и создаём диапазоны
-        this.rangesContainer.innerHTML = '';
-        
-        // Создаём первый диапазон (от 1 до последней страницы)
-        this.addRange(1, this.totalPages);
-
-        // Обновляем видимость кнопок удаления
-        this.updateRemoveButtonsVisibility();
     }
 
     addRange(from = null, to = null) {
@@ -432,55 +400,32 @@ class PdfSplitter {
         this.splitButton.disabled = true;
         this.splitButton.innerHTML = `
             <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                <!-- spinner icon -->
             </svg>
             Обработка...
         `;
 
         try {
-            const pdfData = JSON.parse(this.previewContainer.dataset.pdfInfo);
-            const ranges = this.getRanges(); // Теперь получаем объекты с range, name и type
-            
-            const response = await fetch('/pdf/download-ranges', {
+            const response = await fetch(this.previewContainer.dataset.downloadUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
-                    'X-Requested-With': 'XMLHttpRequest',
                     'Accept': 'application/json'
                 },
                 body: JSON.stringify({
-                    session_id: pdfData.session_id,
-                    pdf_path: pdfData.pdf_path,
-                    ranges: ranges, // Теперь передаем объекты с type
-                    original_name: pdfData.original_name
+                    documents: this.uploadedDocuments,
+                    ranges: this.getRanges()
                 })
             });
 
-            // Проверяем content-type перед парсингом
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('application/json')) {
-                const text = await response.text();
-                throw new Error(`Ожидался JSON, получен: ${text.substring(0, 100)}...`);
-            }
-
             const data = await response.json();
+            if (!response.ok) throw new Error(data.message || 'Ошибка сервера');
             
-            if (!response.ok) {
-                throw new Error(data.message || 'Ошибка сервера');
-            }
-
-            // Показываем кнопку скачивания
             this.showDownloadButton(data.download_url, data.filename);
 
         } catch (error) {
-            console.error('Split Error:', error);
-            this.showSplitError(
-                error.message.includes('<!DOCTYPE html>') 
-                    ? 'Сервер вернул HTML вместо JSON (проверьте URL)' 
-                    : error.message
-            );
+            this.showSplitError(error.message);
         } finally {
             this.splitButton.disabled = false;
             this.splitButton.innerHTML = originalHtml;
@@ -543,7 +488,6 @@ class PdfSplitter {
 
     getRanges() {
         const ranges = [];
-        
         const rangeElements = this.rangesContainer.children;
         
         Array.from(rangeElements).forEach(rangeEl => {
@@ -556,16 +500,14 @@ class PdfSplitter {
                 const from = parseInt(fromInput.value);
                 const to = parseInt(toInput.value);
                 const name = nameInput.value.trim();
-                const docType = typeSelect.value; // Получаем выбранное значение типа документа
+                const type = typeSelect.value;
                 
-                if (!isNaN(from) && !isNaN(to)) {
-                    if (from <= to) {
-                        ranges.push({
-                            range: `${from}-${to}`,
-                            name: name,
-                            type: docType // Добавляем тип документа
-                        });
-                    }
+                if (!isNaN(from) && !isNaN(to) && from <= to) {
+                    ranges.push({
+                        range: `${from}-${to}`,
+                        name: name || `Документ ${ranges.length + 1}`,
+                        type: type
+                    });
                 }
             } catch (e) {
                 console.error('Ошибка обработки диапазона:', e);

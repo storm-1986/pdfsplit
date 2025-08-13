@@ -7,7 +7,7 @@
     <form id="upload-form" action="{{ route('pdf.process') }}" method="POST" enctype="multipart/form-data" novalidate>
         @csrf
         <div id="upload-area" class="upload-area border-2 border-dashed border-gray-300 rounded-lg p-6 text-center mb-4">
-            <input type="file" id="pdf" name="pdf" accept=".pdf" class="hidden">
+            <input type="file" id="pdf" class="hidden" accept=".pdf" multiple>
             <label for="pdf" class="cursor-pointer flex flex-col items-center">
                 <svg class="w-12 h-12 text-blue-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
@@ -33,27 +33,32 @@
     </form>
 </div>
 
-<div id="preview-container" data-download-url="{{ route('pdf.download-ranges') }}" data-csrf-token="{{ csrf_token() }}" class="hidden w-full mx-auto px-4 py-6">
-    <div class="flex justify-between items-center mb-4">
-        <h2 id="pdf-title" class="text-xl font-bold text-gray-800"></h2>
+<div id="preview-container" data-download-url="{{ route('pdf.download-ranges') }}" data-csrf-token="{{ csrf_token() }}" class="hidden fixed inset-0 bg-white z-50 overflow-y-auto pb-6">
+    <!-- Заголовок и кнопка назад -->
+    <div class="flex justify-between items-center mb-6 sticky top-0 bg-white py-4 pl-4 z-10">
+        <h2 class="text-xl font-bold text-gray-800">Загруженные документы</h2>
         <button id="back-button" type="button" class="text-blue-500 hover:text-blue-700 cursor-pointer">
-            ← Выбрать другой файл
+            ← Выбрать другие файлы
         </button>
     </div>
     
-    <div class="flex flex-col md:flex-row gap-6">
+    <!-- Основная область с двумя колонками -->
+    <div class="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-150px)]">
+        <!-- Левая колонка - превью документов -->
         <div class="w-full">
-            <div id="thumbnails-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"></div>
+            <div id="documents-preview" class="space-y-8 pl-2">
+            </div>
         </div>
         
+        <!-- Правая колонка - настройки разделения (без изменений) -->
         <div class="w-full md:w-1/3">
-            <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky top-4">
+            <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky top-21">
                 <h3 class="text-lg font-medium mb-4">Настройки разделения</h3>
                 
                 <div id="ranges-container" class="space-y-3 mb-4">
                 </div>
                 
-                <button type="button" id="add-range" class="w-full text-blue-500 hover:text-blue-700 flex items-center justify-center mb-4 cursor-pointer">
+                <button type="button" id="add-range" class="w-full text-blue-500 hover:text-blue-700 flex items-center justify-center mb-4 cursor-pointer text-sm">
                     <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                     </svg>
@@ -61,7 +66,7 @@
                 </button>
                 
                 <button type="button" id="split-button" 
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer">
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer text-sm">
                     Разделить PDF
                 </button>
             </div>
