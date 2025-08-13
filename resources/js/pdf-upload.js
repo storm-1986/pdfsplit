@@ -217,7 +217,7 @@ class PdfSplitter {
                 thumb.className = 'border rounded overflow-hidden hover:shadow-md transition';
                 thumb.innerHTML = `
                     <a href="${page.image_url}" data-glightbox="title: Страница ${globalPageNum}">
-                        <img src="${page.image_url}" alt="Страница ${globalPageNum}" class="w-full h-full object-contain">
+                        <img src="${page.image_url}" alt="Страница ${globalPageNum}" class="w-full object-contain">
                         <div class="p-2 text-center bg-gray-50 border-t">
                             <span class="text-xs font-medium">Стр. ${globalPageNum++}</span>
                         </div>
