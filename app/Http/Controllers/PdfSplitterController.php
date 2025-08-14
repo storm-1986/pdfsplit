@@ -75,75 +75,78 @@ class PdfSplitterController extends Controller
     {
         $validated = $request->validate([
             'documents' => 'required|array',
-            'documents.*.session_id' => 'required|string',
             'documents.*.pdf_path' => 'required|string',
-            'documents.*.original_name' => 'required|string',
             'ranges' => 'required|array',
-            'ranges.*.range' => 'required|string|regex:/^\d+(-\d+)?$/',
-            'ranges.*.name' => 'nullable|string|max:100',
-            'ranges.*.type' => 'required|string|in:14,15,16,91,93,134'
+            'ranges.*.range' => 'required|string',
+            'ranges.*.name' => 'required|string',
         ]);
 
         try {
-            // Создаём уникальное имя для ZIP-архива
             $zipPath = storage_path("app/public/temp_zips/" . Str::uuid() . ".zip");
-            
             $zip = new ZipArchive();
-            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-                throw new \Exception("Не удалось создать ZIP архив");
-            }
+            $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
 
-            // Обрабатываем все документы
+            // Собираем все страницы всех документов
+            $allPages = [];
             foreach ($validated['documents'] as $document) {
-                $pdfPath = storage_path('app/' . $document['pdf_path']);
-                
-                if (!file_exists($pdfPath)) {
-                    Log::error("Файл не найден: {$document['pdf_path']}");
-                    continue;
-                }
-
-                // Обрабатываем все диапазоны для документа
-                foreach ($validated['ranges'] as $rangeData) {
-                    $pages = $this->parseRange($rangeData['range'], (new Pdf($pdfPath))->getNumberOfPages());
-                    
-                    if (empty($pages)) {
-                        Log::warning("Пустой диапазон: {$rangeData['range']}");
-                        continue;
-                    }
-
-                    $originalName = pathinfo($document['original_name'], PATHINFO_FILENAME);
-                    $safeName = Str::slug($rangeData['name'] ?? $originalName);
-                    $fileName = "{$originalName}_range_{$rangeData['range']}.pdf";
-                    
-                    $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
-                    $this->createPdfFromRange($pdfPath, $pages, $tempPdfPath);
-                    
-                    $zip->addFile($tempPdfPath, $fileName);
-                }
+                $pdf = new Pdf(storage_path('app/' . $document['pdf_path']));
+                $pagesCount = $pdf->getNumberOfPages();
+                $allPages = array_merge($allPages, range(1, $pagesCount));
             }
 
-            if ($zip->numFiles === 0) {
-                throw new \Exception("Не создано ни одного PDF файла");
+            // Обрабатываем каждый диапазон
+            foreach ($validated['ranges'] as $rangeData) {
+                $pages = $this->parseRange($rangeData['range'], count($allPages));
+                $fileName = $this->sanitizeFilename($rangeData['name']) . '.pdf';
+                $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
+
+                // Создаем PDF для диапазона
+                $imagick = new Imagick();
+                $currentPage = 0;
+                
+                foreach ($validated['documents'] as $document) {
+                    $pdf = new Pdf(storage_path('app/' . $document['pdf_path']));
+                    $pagesCount = $pdf->getNumberOfPages();
+                    
+                    foreach (range(1, $pagesCount) as $pageNum) {
+                        $currentPage++;
+                        if (in_array($currentPage, $pages)) {
+                            $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
+                            $pdf->setPage($pageNum)->saveImage($tempImage);
+                            $pageImage = new Imagick($tempImage);
+                            $imagick->addImage($pageImage);
+                            unlink($tempImage);
+                        }
+                    }
+                }
+
+                $imagick->setImageFormat('pdf');
+                $imagick->writeImages($tempPdfPath, true);
+                $imagick->clear();
+
+                $zip->addFile($tempPdfPath, $fileName);
             }
 
             $zip->close();
-
-            // Удаляем временные файлы
             array_map('unlink', glob(storage_path('app/temp_split/*.pdf')));
 
             return response()->json([
                 'success' => true,
                 'download_url' => asset("storage/temp_zips/" . basename($zipPath)),
-                'filename' => "Разделенные_документы_" . date('Y-m-d') . ".zip"
+                'filename' => "ranges_" . date('Ymd_His') . ".zip"
             ]);
 
         } catch (\Exception $e) {
-            Log::error("PDF split error: " . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    private function sanitizeFilename($name)
+    {
+        return preg_replace('/[^a-zA-Z0-9_\-]/', '', $name);
     }
 
     protected function parseRange($range, $maxPages)
