@@ -315,7 +315,7 @@ class PdfSplitter {
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
                         value="${fileName || `Документ ${docNumber}`}" 
-                        class="document-name border rounded px-2 py-1 w-80 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -332,6 +332,7 @@ class PdfSplitter {
                         <option value="93">Письма</option>
                         <option value="134" selected>Прочие документы</option>
                     </select>
+                    <input type="text" class="system-number border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full sm:w-32 md:w-35" placeholder="Системный номер">
                 </div>
                 <div class="flex items-center space-x-3">
                     <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
@@ -556,15 +557,21 @@ class PdfSplitter {
             const fromInput = rangeEl.querySelector('.from-input');
             const toInput = rangeEl.querySelector('.to-input');
             const nameInput = rangeEl.querySelector('.document-name');
+            const typeSelect = rangeEl.querySelector('.document-type');
+            const systemNumberInput = rangeEl.querySelector('.system-number');
             
             const from = parseInt(fromInput.value);
             const to = parseInt(toInput.value);
             const name = nameInput.value.trim();
+            const type = typeSelect.value;
+            const systemNumber = systemNumberInput.value.trim();
             
             if (!isNaN(from) && !isNaN(to) && from <= to) {
                 ranges.push({
                     range: `${from}-${to}`,
                     name: name,
+                    type: type,
+                    systemNumber: systemNumber,
                     from: from,
                     to: to
                 });
