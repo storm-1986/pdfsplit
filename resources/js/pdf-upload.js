@@ -14,7 +14,7 @@ class PdfSplitter {
         // Явно находим кнопку загрузки
         this.uploadButton = this.uploadForm.querySelector('button[type="submit"]');
         
-        this.totalPages = 0;
+        this._totalPages = 0;
         this.initEventListeners();
         this.setupDragAndDrop();
 
@@ -27,6 +27,18 @@ class PdfSplitter {
             console.error('Элемент preview-container не найден');
             return;
         }
+    }
+
+    get totalPages() {
+        return this._totalPages;
+    }
+
+    set totalPages(value) {
+        this._totalPages = value;
+        // Обновляем max-атрибуты всех range-инпутов
+        document.querySelectorAll('.from-input, .to-input').forEach(input => {
+            input.setAttribute('max', this._totalPages);
+        });
     }
 
     initEventListeners() {
@@ -195,7 +207,6 @@ class PdfSplitter {
     }
 
     showPreview() {
-        // Скрываем информацию о файлах только после успешной загрузки
         this.hideFileInfo();
         this.previewContainer.classList.remove('hidden');
         document.getElementById('upload-container').classList.add('hidden');
@@ -203,49 +214,58 @@ class PdfSplitter {
         const previewContainer = document.getElementById('documents-preview');
         previewContainer.innerHTML = '';
         
+        // 1. Сначала вычисляем общее количество страниц
+        this.totalPages = this.uploadedDocuments.reduce(
+            (total, doc) => total + doc.pages.length, 
+            0
+        );
+        
         let globalPageNum = 1;
-        let rangeStart = 1;
+        let currentPage = 1; // Отслеживаем текущую страницу для диапазонов
         
         // Очищаем предыдущие диапазоны
         this.rangesContainer.innerHTML = '';
         
-        // Создаем диапазоны для каждого документа
+        // Создаем превью и диапазоны для каждого документа
         this.uploadedDocuments.forEach((doc, index) => {
             const docPageCount = doc.pages.length;
-            const rangeEnd = rangeStart + docPageCount - 1;
+            const docName = doc.original_name.replace(/\.pdf$/i, '');
             
-            // Создаем превью документа
+            // 2. Создаем контейнер документа
             const docContainer = document.createElement('div');
             docContainer.className = 'bg-white rounded-lg shadow-sm p-4 border border-gray-200 mb-6';
             
+            // 3. Добавляем заголовок документа
             const title = document.createElement('h3');
             title.className = 'text-lg font-semibold text-gray-800 mb-3';
             title.textContent = `${index + 1}. ${doc.original_name}`;
             docContainer.appendChild(title);
             
+            // 4. Создаем диапазон для этого документа
+            const rangeEnd = currentPage + docPageCount - 1;
+            this.addRange(
+                currentPage,      // Начало диапазона
+                rangeEnd,         // Конец диапазона
+                docName           // Имя файла без .pdf
+            );
+            currentPage = rangeEnd + 1;
+            
+            // 5. Добавляем миниатюры страниц
             const thumbsContainer = document.createElement('div');
             thumbsContainer.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3';
             
-            // Добавляем диапазон для этого документа
-            this.addRange(
-                rangeStart,
-                rangeEnd,
-                doc.original_name.replace('.pdf', '') // Имя файла без расширения
-            );
-            
-            rangeStart += docPageCount;
-            
-            // Добавляем миниатюры страниц
             doc.pages.forEach(page => {
                 const thumb = document.createElement('div');
                 thumb.className = 'border rounded overflow-hidden hover:shadow-md transition';
                 thumb.innerHTML = `
                     <a href="${page.image_url}" data-glightbox="title: Страница ${globalPageNum}">
-                        <img src="${page.image_url}" alt="Страница ${globalPageNum}" class="w-full object-contain">
-                        <div class="p-2 text-center bg-gray-50 border-t">
-                            <span class="text-xs font-medium">Стр. ${globalPageNum++}</span>
-                        </div>
+                        <img src="${page.image_url}" 
+                            alt="Страница ${globalPageNum}" 
+                            class="w-full object-contain">
                     </a>
+                    <div class="p-2 text-center bg-gray-50 border-t">
+                        <span class="text-xs font-medium">Стр. ${globalPageNum++}</span>
+                    </div>
                 `;
                 thumbsContainer.appendChild(thumb);
             });
@@ -254,56 +274,52 @@ class PdfSplitter {
             previewContainer.appendChild(docContainer);
         });
         
-        this.totalPages = globalPageNum - 1;
-        
+        // 6. Обновляем GLightbox
         if (window._glightbox) {
             window._glightbox.reload();
         }
+    }
+
+    updateAllRangeInputs() {
+        document.querySelectorAll('.from-input, .to-input').forEach(input => {
+            input.setAttribute('max', this.totalPages);
+            const value = parseInt(input.value);
+            if (value > this.totalPages) {
+                input.value = this.totalPages;
+            }
+        });
     }
 
     addRange(from = null, to = null, fileName) {
         const ranges = this.getRanges();
         const docNumber = ranges.length + 1;
         
-        if (!from || !to) {
+        // Рассчитываем значения по умолчанию
+        if (from === null || to === null) {
             if (ranges.length > 0) {
                 const lastRange = ranges[ranges.length - 1];
                 from = lastRange.to + 1;
                 to = this.totalPages;
             } else {
                 from = 1;
-                to = this.totalPages;
+                to = this.totalPages > 0 ? this.totalPages : 1;
             }
         }
 
+        // Создаем элемент диапазона
         const rangeElement = document.createElement('div');
         rangeElement.className = 'space-y-2 bg-white p-4 rounded-lg border';
-        
-        // Используем переданное имя или генерируем стандартное
-        const displayName = fileName || `Документ ${docNumber}`;
         
         rangeElement.innerHTML = `
             <div class="range-container">
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
-                        value="${displayName}" 
+                        value="${fileName || `Документ ${docNumber}`}" 
                         class="document-name border rounded px-2 py-1 w-full text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
+                        <!-- Иконка удаления -->
                     </button>
-                </div>
-                <div class="flex items-center space-x-3 mb-2">
-                    <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                        <option value="14">Протокол к договору</option>
-                        <option value="15">Приложение к договору</option>
-                        <option value="16">Доп.соглашение</option>
-                        <option value="91">Договор с покупателем</option>
-                        <option value="93">Письма</option>
-                        <option value="134" selected>Прочие документы</option>
-                    </select>
                 </div>
                 <div class="flex items-center space-x-3">
                     <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
@@ -315,42 +331,32 @@ class PdfSplitter {
                 </div>
             </div>
         `;
-        
-        const removeBtn = rangeElement.querySelector('.remove-range');
-        if (removeBtn) {
-            removeBtn.addEventListener('click', () => {
-                if (this.rangesContainer.children.length > 1) {
-                    rangeElement.remove();
-                    this.renumberDocuments(); // Пересчитываем номера документов
-                    this.updateRemoveButtonsVisibility();
-                }
-            });
-        }
-        
-        this.rangesContainer.appendChild(rangeElement);
-        this.updateRemoveButtonsVisibility();
-        
-        // Обновляем значения при изменении
+
+        // Добавляем обработчики изменений
         const fromInput = rangeElement.querySelector('.from-input');
         const toInput = rangeElement.querySelector('.to-input');
         
         fromInput.addEventListener('change', () => {
-            const fromValue = parseInt(fromInput.value);
-            const toValue = parseInt(toInput.value);
+            const fromVal = parseInt(fromInput.value);
+            const toVal = parseInt(toInput.value);
             
-            if (fromValue > toValue) {
-                toInput.value = fromValue;
-            }
+            if (fromVal > toVal) toInput.value = fromVal;
+            if (fromVal < 1) fromInput.value = 1;
+            if (fromVal > this.totalPages) fromInput.value = this.totalPages;
         });
         
         toInput.addEventListener('change', () => {
-            const fromValue = parseInt(fromInput.value);
-            const toValue = parseInt(toInput.value);
+            const fromVal = parseInt(fromInput.value);
+            const toVal = parseInt(toInput.value);
             
-            if (toValue < fromValue) {
-                fromInput.value = toValue;
-            }
+            if (toVal < fromVal) fromInput.value = toVal;
+            if (toVal < 1) toInput.value = 1;
+            if (toVal > this.totalPages) toInput.value = this.totalPages;
         });
+
+        // Добавляем в DOM
+        this.rangesContainer.appendChild(rangeElement);
+        this.updateRemoveButtonsVisibility();
     }
 
     renumberDocuments() {
