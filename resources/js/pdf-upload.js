@@ -315,11 +315,23 @@ class PdfSplitter {
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
                         value="${fileName || `Документ ${docNumber}`}" 
-                        class="document-name border rounded px-2 py-1 w-full text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        class="document-name border rounded px-2 py-1 w-80 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
-                        <!-- Иконка удаления -->
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
                     </button>
+                </div>
+                <div class="flex items-center space-x-3 mb-2">
+                    <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                        <option value="14">Протокол к договору</option>
+                        <option value="15">Приложение к договору</option>
+                        <option value="16">Доп.соглашение</option>
+                        <option value="91">Договор с покупателем</option>
+                        <option value="93">Письма</option>
+                        <option value="134" selected>Прочие документы</option>
+                    </select>
                 </div>
                 <div class="flex items-center space-x-3">
                     <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
@@ -332,7 +344,21 @@ class PdfSplitter {
             </div>
         `;
 
-        // Добавляем обработчики изменений
+        const removeBtn = rangeElement.querySelector('.remove-range');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', () => {
+                if (this.rangesContainer.children.length > 1) {
+                    rangeElement.remove();
+                    this.renumberDocuments(); // Пересчитываем номера документов
+                    this.updateRemoveButtonsVisibility();
+                }
+            });
+        }
+        
+        this.rangesContainer.appendChild(rangeElement);
+        this.updateRemoveButtonsVisibility();
+        
+        // Обновляем значения при изменении
         const fromInput = rangeElement.querySelector('.from-input');
         const toInput = rangeElement.querySelector('.to-input');
         
