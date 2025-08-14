@@ -204,21 +204,38 @@ class PdfSplitter {
         previewContainer.innerHTML = '';
         
         let globalPageNum = 1;
+        let rangeStart = 1;
         
-        this.uploadedDocuments.forEach((doc, docIndex) => {
+        // Очищаем предыдущие диапазоны
+        this.rangesContainer.innerHTML = '';
+        
+        // Создаем диапазоны для каждого документа
+        this.uploadedDocuments.forEach((doc, index) => {
+            const docPageCount = doc.pages.length;
+            const rangeEnd = rangeStart + docPageCount - 1;
+            
+            // Создаем превью документа
             const docContainer = document.createElement('div');
             docContainer.className = 'bg-white rounded-lg shadow-sm p-4 border border-gray-200 mb-6';
             
-            // Заголовок документа
             const title = document.createElement('h3');
             title.className = 'text-lg font-semibold text-gray-800 mb-3';
-            title.textContent = `${docIndex + 1}. ${doc.original_name}`;
+            title.textContent = `${index + 1}. ${doc.original_name}`;
             docContainer.appendChild(title);
             
-            // Миниатюры страниц
             const thumbsContainer = document.createElement('div');
             thumbsContainer.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3';
             
+            // Добавляем диапазон для этого документа
+            this.addRange(
+                rangeStart,
+                rangeEnd,
+                doc.original_name.replace('.pdf', '') // Имя файла без расширения
+            );
+            
+            rangeStart += docPageCount;
+            
+            // Добавляем миниатюры страниц
             doc.pages.forEach(page => {
                 const thumb = document.createElement('div');
                 thumb.className = 'border rounded overflow-hidden hover:shadow-md transition';
@@ -238,23 +255,20 @@ class PdfSplitter {
         });
         
         this.totalPages = globalPageNum - 1;
-        this.rangesContainer.innerHTML = '';
-        this.addRange(1, this.totalPages);
         
-        // Инициализация GLightbox
         if (window._glightbox) {
             window._glightbox.reload();
         }
     }
 
-    addRange(from = null, to = null) {
+    addRange(from = null, to = null, fileName) {
         const ranges = this.getRanges();
-        const lastRange = ranges[ranges.length - 1];
         const docNumber = ranges.length + 1;
         
         if (!from || !to) {
-            if (lastRange) {
-                from = lastRange.to < this.totalPages ? lastRange.to + 1 : this.totalPages;
+            if (ranges.length > 0) {
+                const lastRange = ranges[ranges.length - 1];
+                from = lastRange.to + 1;
                 to = this.totalPages;
             } else {
                 from = 1;
@@ -264,12 +278,16 @@ class PdfSplitter {
 
         const rangeElement = document.createElement('div');
         rangeElement.className = 'space-y-2 bg-white p-4 rounded-lg border';
+        
+        // Используем переданное имя или генерируем стандартное
+        const displayName = fileName || `Документ ${docNumber}`;
+        
         rangeElement.innerHTML = `
             <div class="range-container">
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
-                        value="Документ ${docNumber}" 
-                        class="document-name border rounded px-2 py-1 w-40 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        value="${displayName}" 
+                        class="document-name border rounded px-2 py-1 w-full text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,12 +306,12 @@ class PdfSplitter {
                     </select>
                 </div>
                 <div class="flex items-center space-x-3">
-                    <span class="text-gray-700 whitespace-nowrap">От страницы</span>
+                    <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
                     <input type="number" min="1" max="${this.totalPages}" value="${from}" 
-                        class="range-input from-input w-16 px-2 py-1 border rounded">
-                    <span class="text-gray-700 whitespace-nowrap">к</span>
+                        class="range-input from-input w-16 px-2 py-1 border rounded text-sm">
+                    <span class="text-gray-700 whitespace-nowrap text-sm">—</span>
                     <input type="number" min="1" max="${this.totalPages}" value="${to}" 
-                        class="range-input to-input w-16 px-2 py-1 border rounded">
+                        class="range-input to-input w-16 px-2 py-1 border rounded text-sm">
                 </div>
             </div>
         `;
@@ -503,26 +521,21 @@ class PdfSplitter {
         const rangeElements = this.rangesContainer.children;
         
         Array.from(rangeElements).forEach(rangeEl => {
-            try {
-                const fromInput = rangeEl.querySelector('.from-input');
-                const toInput = rangeEl.querySelector('.to-input');
-                const nameInput = rangeEl.querySelector('.document-name');
-                const typeSelect = rangeEl.querySelector('.document-type');
-                
-                const from = parseInt(fromInput.value);
-                const to = parseInt(toInput.value);
-                const name = nameInput.value.trim();
-                const type = typeSelect.value;
-                
-                if (!isNaN(from) && !isNaN(to) && from <= to) {
-                    ranges.push({
-                        range: `${from}-${to}`,
-                        name: name || `Документ ${ranges.length + 1}`,
-                        type: type
-                    });
-                }
-            } catch (e) {
-                console.error('Ошибка обработки диапазона:', e);
+            const fromInput = rangeEl.querySelector('.from-input');
+            const toInput = rangeEl.querySelector('.to-input');
+            const nameInput = rangeEl.querySelector('.document-name');
+            
+            const from = parseInt(fromInput.value);
+            const to = parseInt(toInput.value);
+            const name = nameInput.value.trim();
+            
+            if (!isNaN(from) && !isNaN(to) && from <= to) {
+                ranges.push({
+                    range: `${from}-${to}`,
+                    name: name,
+                    from: from,
+                    to: to
+                });
             }
         });
         

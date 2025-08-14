@@ -52,7 +52,7 @@
         
         <!-- Правая колонка - настройки разделения (без изменений) -->
         <div class="w-full md:w-1/3">
-            <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky">
+            <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky top-15">
                 <h3 class="text-lg font-medium mb-4">Настройки разделения</h3>
                 
                 <div id="ranges-container" class="space-y-3 mb-4">
