@@ -35,7 +35,7 @@
 
 <div id="preview-container" data-download-url="{{ route('pdf.download-ranges') }}" data-csrf-token="{{ csrf_token() }}" class="hidden fixed inset-0 bg-white z-50 overflow-y-auto pb-6">
     <!-- Заголовок и кнопка назад -->
-    <div class="flex justify-between items-center mb-6 sticky top-0 bg-white py-4 pl-4 z-10">
+    <div class="flex justify-between items-center sticky top-0 bg-white p-4 z-10">
         <h2 class="text-xl font-bold text-gray-800">Загруженные документы</h2>
         <button id="back-button" type="button" class="text-blue-500 hover:text-blue-700 cursor-pointer">
             ← Выбрать другие файлы
@@ -52,13 +52,13 @@
         
         <!-- Правая колонка - настройки разделения (без изменений) -->
         <div class="w-full md:w-1/3">
-            <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky top-21">
+            <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky">
                 <h3 class="text-lg font-medium mb-4">Настройки разделения</h3>
                 
                 <div id="ranges-container" class="space-y-3 mb-4">
                 </div>
                 
-                <button type="button" id="add-range" class="w-full text-blue-500 hover:text-blue-700 flex items-center justify-center mb-4 cursor-pointer text-sm">
+                <button type="button" id="add-range" class="w-full text-blue-500 hover:text-blue-700 flex items-center justify-center mb-4 cursor-pointer">
                     <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                     </svg>
@@ -66,7 +66,7 @@
                 </button>
                 
                 <button type="button" id="split-button" 
-                        class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer text-sm">
+                        class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer">
                     Разделить PDF
                 </button>
             </div>

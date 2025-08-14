@@ -82,6 +82,8 @@ class PdfSplitter {
             this.showSelectedFiles(files);
             this.uploadButton.disabled = false;
             this.uploadForm.querySelector('.upload-error')?.remove();
+        } else {
+            this.uploadButton.disabled = true;
         }
     }
 
@@ -122,6 +124,9 @@ class PdfSplitter {
             this.showFileError('Пожалуйста, выберите PDF файлы');
             return;
         }
+
+        // Частичный сброс (сохраняем выбранные файлы)
+        this.resetForm(true);
 
         const originalButtonHtml = this.uploadButton.innerHTML;
         this.uploadButton.disabled = true;
@@ -190,6 +195,8 @@ class PdfSplitter {
     }
 
     showPreview() {
+        // Скрываем информацию о файлах только после успешной загрузки
+        this.hideFileInfo();
         this.previewContainer.classList.remove('hidden');
         document.getElementById('upload-container').classList.add('hidden');
         
@@ -373,26 +380,31 @@ class PdfSplitter {
         });
     }
 
-    resetForm() {
-        // 1. Переключаем видимость контейнеров
+    resetForm(keepFiles = false) {
+        // Скрываем превью и показываем форму загрузки
         this.previewContainer.classList.add('hidden');
         document.getElementById('upload-container').classList.remove('hidden');
         
-        // 2. Очищаем информацию о файле (добавлено)
-        this.hideFileInfo();
+        // Очищаем кнопку скачивания
+        const downloadBtn = document.getElementById('download-button-container');
+        if (downloadBtn) downloadBtn.remove();
         
-        // 3. Сбрасываем значение файлового ввода (добавлено)
-        this.fileInput.value = '';
+        // Сбрасываем файлы только если явно указано
+        if (!keepFiles) {
+            this.fileInput.value = '';
+            this.hideFileInfo();
+        }
         
-        // 4. Блокируем кнопку загрузки
-        this.uploadButton.disabled = true;
+        // Сбрасываем состояние кнопки загрузки
+        this.uploadButton.disabled = !keepFiles;
         
-        // 5. Возвращаем центрирование
-        document.body.classList.add('justify-center');
-        
-        // 6. Очищаем сообщения об ошибках (добавлено)
+        // Очищаем сообщения об ошибках
         const errorElement = this.uploadForm.querySelector('.upload-error');
         if (errorElement) errorElement.remove();
+        
+        // Сбрасываем данные
+        this.uploadedDocuments = [];
+        this.totalPages = 0;
     }
 
     async handleSplit() {
@@ -439,31 +451,25 @@ class PdfSplitter {
     }
 
     showDownloadButton(downloadUrl, filename) {
-        // Удаляем предыдущую кнопку, если есть
+        // Удаляем предыдущую кнопку
         const oldButton = document.getElementById('download-button-container');
         if (oldButton) oldButton.remove();
         
-        // Создаем контейнер для кнопки
-        const container = document.createElement('div');
-        container.id = 'download-button-container';
-        container.className = 'mt-4';
-        
-        // Создаем кнопку с такими же стилями как "Разделить PDF"
+        // Создаем кнопку
         const downloadBtn = document.createElement('a');
+        downloadBtn.id = 'download-button-container'; // Важно: тот же ID
         downloadBtn.href = downloadUrl;
-        downloadBtn.className = 'flex items-center justify-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition ease-in-out duration-150';
+        downloadBtn.className = 'w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer text-sm flex items-center justify-center mt-4';
         downloadBtn.download = filename;
         downloadBtn.innerHTML = `
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
             </svg>
             Скачать файлы
         `;
         
-        container.appendChild(downloadBtn);
-        
         // Вставляем после кнопки "Разделить PDF"
-        this.splitButton.parentNode.insertBefore(container, this.splitButton.nextSibling);
+        this.splitButton.insertAdjacentElement('afterend', downloadBtn);
     }
 
     // Новый метод для генерации имени архива
