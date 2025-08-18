@@ -15,6 +15,8 @@ class PdfSplitter {
         this.uploadButton = this.uploadForm.querySelector('button[type="submit"]');
         
         this._totalPages = 0;
+        this.currentMaxPage = 0; // Текущая максимальная страница для новых диапазонов
+        
         this.initEventListeners();
         this.setupDragAndDrop();
 
@@ -294,27 +296,91 @@ class PdfSplitter {
         const ranges = this.getRanges();
         const docNumber = ranges.length + 1;
         
+        if (ranges.length >= this.totalPages) {
+            alert(`Максимальное количество диапазонов: ${this.totalPages}`);
+            return;
+        }
+
         // Рассчитываем значения по умолчанию
         if (from === null || to === null) {
             if (ranges.length > 0) {
-                const lastRange = ranges[ranges.length - 1];
-                from = lastRange.to + 1;
-                to = this.totalPages;
+                // 1. Находим все "дыры" между диапазонами
+                let holes = [];
+                let lastEnd = 0;
+                
+                // Сортируем диапазоны по начальной странице
+                const sortedRanges = [...ranges].sort((a, b) => a.from - b.from);
+                
+                for (const range of sortedRanges) {
+                    if (range.from > lastEnd + 1) {
+                        holes.push({from: lastEnd + 1, to: range.from - 1});
+                    }
+                    lastEnd = Math.max(lastEnd, range.to);
+                }
+                
+                // Проверяем есть ли дыра в конце
+                if (lastEnd < this.totalPages) {
+                    holes.push({from: lastEnd + 1, to: this.totalPages});
+                }
+
+                // 2. Если есть дыры - используем первую
+                if (holes.length > 0) {
+                    const hole = holes[0];
+                    from = hole.from;
+                    to = hole.to;
+                } 
+                // 3. Если дыр нет - делим самый большой диапазон
+                else {
+                    // Находим самый большой диапазон
+                    let largestRange = null;
+                    let largestSize = 0;
+                    
+                    for (const range of ranges) {
+                        const size = range.to - range.from;
+                        if (size > largestSize) {
+                            largestSize = size;
+                            largestRange = range;
+                        }
+                    }
+                    
+                    if (largestRange) {
+                        const rangeElement = Array.from(this.rangesContainer.children)
+                            .find(el => parseInt(el.querySelector('.from-input').value) === largestRange.from);
+                        
+                        if (rangeElement) {
+                            const toInput = rangeElement.querySelector('.to-input');
+                            const newEnd = largestRange.from + Math.floor(largestSize / 2);
+                            toInput.value = newEnd;
+                            
+                            from = newEnd + 1;
+                            to = largestRange.to;
+                        }
+                    }
+                }
             } else {
+                // Первый диапазон
                 from = 1;
-                to = this.totalPages > 0 ? this.totalPages : 1;
+                to = this.totalPages;
             }
         }
 
-        // Создаем элемент диапазона
+        // Проверяем границы
+        if (from < 1) from = 1;
+        if (to > this.totalPages) to = this.totalPages;
+        if (from > to) from = to;
+
+        // Создаем новый диапазон
         const rangeElement = document.createElement('div');
         rangeElement.className = 'space-y-2 bg-white p-4 rounded-lg border';
+        
+        // Генерируем уникальное имя для нового диапазона
+        const newName = fileName || `Документ ${docNumber}`;
         
         rangeElement.innerHTML = `
             <div class="range-container">
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
-                        value="${fileName || `Документ ${docNumber}`}" 
+                        value="${newName}" 
                         class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
@@ -345,84 +411,205 @@ class PdfSplitter {
             </div>
         `;
 
+        // Обработчик удаления
         const removeBtn = rangeElement.querySelector('.remove-range');
         if (removeBtn) {
             removeBtn.addEventListener('click', () => {
                 if (this.rangesContainer.children.length > 1) {
                     rangeElement.remove();
-                    this.renumberDocuments(); // Пересчитываем номера документов
+                    this.renumberDocuments();
                     this.updateRemoveButtonsVisibility();
                 }
             });
         }
-        
-        this.rangesContainer.appendChild(rangeElement);
-        this.updateRemoveButtonsVisibility();
-        
-        // Обновляем значения при изменении
+
+        // Обработчики изменений
         const fromInput = rangeElement.querySelector('.from-input');
         const toInput = rangeElement.querySelector('.to-input');
         
         fromInput.addEventListener('change', () => {
-            const fromVal = parseInt(fromInput.value);
-            const toVal = parseInt(toInput.value);
-            
-            if (fromVal > toVal) toInput.value = fromVal;
-            if (fromVal < 1) fromInput.value = 1;
-            if (fromVal > this.totalPages) fromInput.value = this.totalPages;
+            this.adjustRangesAfterManualEdit(rangeElement);
         });
         
         toInput.addEventListener('change', () => {
-            const fromVal = parseInt(fromInput.value);
-            const toVal = parseInt(toInput.value);
-            
-            if (toVal < fromVal) fromInput.value = toVal;
-            if (toVal < 1) toInput.value = 1;
-            if (toVal > this.totalPages) toInput.value = this.totalPages;
+            this.adjustRangesAfterManualEdit(rangeElement);
         });
 
-        // Добавляем в DOM
         this.rangesContainer.appendChild(rangeElement);
         this.updateRemoveButtonsVisibility();
     }
 
+    // Новый метод для корректировки последнего диапазона после удаления
+    adjustLastRange() {
+        const ranges = this.getRanges();
+        if (ranges.length === 0) return;
+        
+        const lastRange = ranges[ranges.length - 1];
+        const lastRangeElement = this.rangesContainer.children[ranges.length - 1];
+        const lastToInput = lastRangeElement.querySelector('.to-input');
+        
+        // Устанавливаем конец последнего диапазона на последнюю страницу
+        lastToInput.value = this.totalPages;
+    }
+
+adjustRangesAfterManualEdit(editedRange) {
+    const rangeElements = Array.from(this.rangesContainer.children);
+    const currentIndex = rangeElements.indexOf(editedRange);
+    
+    if (currentIndex === -1) return;
+
+    const fromInput = editedRange.querySelector('.from-input');
+    const toInput = editedRange.querySelector('.to-input');
+    
+    let from = parseInt(fromInput.value) || 1;
+    let to = parseInt(toInput.value) || 1;
+
+    // Корректируем значения текущего диапазона
+    if (from < 1) from = 1;
+    if (to > this.totalPages) to = this.totalPages;
+    if (from > to) {
+        // Если начало больше конца, меняем их местами
+        [from, to] = [to, from];
+    }
+    
+    fromInput.value = from;
+    toInput.value = to;
+
+    // Корректируем предыдущий диапазон (если есть)
+    if (currentIndex > 0) {
+        const prevRange = rangeElements[currentIndex - 1];
+        const prevToInput = prevRange.querySelector('.to-input');
+        const prevTo = parseInt(prevToInput.value) || 1;
+        
+        if (from <= prevTo) {
+            prevToInput.value = from - 1;
+            // Рекурсивно корректируем предыдущий диапазон
+            this.adjustRangesAfterManualEdit(prevRange);
+        }
+    }
+
+        // Корректируем следующий диапазон (если есть)
+        if (currentIndex < rangeElements.length - 1) {
+            const nextRange = rangeElements[currentIndex + 1];
+            const nextFromInput = nextRange.querySelector('.from-input');
+            const nextToInput = nextRange.querySelector('.to-input');
+            let nextFrom = parseInt(nextFromInput.value) || this.totalPages;
+            let nextTo = parseInt(nextToInput.value) || this.totalPages;
+            
+            if (to >= nextFrom) {
+                // Новое начало следующего диапазона
+                nextFrom = Math.min(to + 1, this.totalPages);
+                nextFromInput.value = nextFrom;
+                
+                // Корректируем конец следующего диапазона
+                if (nextTo < nextFrom) {
+                    nextTo = Math.min(nextFrom, this.totalPages);
+                    nextToInput.value = nextTo;
+                }
+                
+                // Рекурсивно корректируем следующий диапазон
+                this.adjustRangesAfterManualEdit(nextRange);
+            }
+        }
+
+        // Проверяем, не стал ли диапазон пустым (from > to)
+        if (from > to) {
+            // Если диапазон стал пустым, удаляем его
+            editedRange.remove();
+            this.renumberDocuments();
+            this.updateRemoveButtonsVisibility();
+            // Корректируем последний диапазон
+            // this.adjustLastRange();
+        }
+
+        // Дополнительная проверка для последнего диапазона
+        if (currentIndex === rangeElements.length - 1) {
+            if (to > this.totalPages) {
+                toInput.value = this.totalPages;
+            }
+        }
+    }
+
+    adjustRanges() {
+        const rangeElements = Array.from(this.rangesContainer.children);
+        if (rangeElements.length === 0) return;
+
+        let remainingPages = this.totalPages;
+        let currentPosition = 1;
+
+        // Распределяем страницы между диапазонами
+        rangeElements.forEach((rangeEl, index) => {
+            const fromInput = rangeEl.querySelector('.from-input');
+            const toInput = rangeEl.querySelector('.to-input');
+            
+            // Последний диапазон получает все оставшиеся страницы
+            if (index === rangeElements.length - 1) {
+                fromInput.value = currentPosition;
+                toInput.value = this.totalPages;
+                return;
+            }
+
+            // Вычисляем количество страниц для этого диапазона
+            const pagesForThisRange = Math.max(1, Math.floor(remainingPages / (rangeElements.length - index)));
+            
+            fromInput.value = currentPosition;
+            toInput.value = currentPosition + pagesForThisRange - 1;
+            
+            currentPosition += pagesForThisRange;
+            remainingPages -= pagesForThisRange;
+        });
+    }
+
+    // Новый метод для обеспечения минимального размера диапазона
+    enforceMinimumRangeSize() {
+        const rangeElements = Array.from(this.rangesContainer.children);
+        
+        // Идем с конца, чтобы корректировать предыдущие диапазоны
+        for (let i = rangeElements.length - 1; i > 0; i--) {
+            const currentRange = rangeElements[i];
+            const prevRange = rangeElements[i - 1];
+            
+            const currentFromInput = currentRange.querySelector('.from-input');
+            const prevToInput = prevRange.querySelector('.to-input');
+            
+            const currentFrom = parseInt(currentFromInput.value) || 1;
+            const prevTo = parseInt(prevToInput.value) || 1;
+            
+            // Если диапазон сжат до минимума, уменьшаем предыдущий
+            if (currentFrom === prevTo + 1) {
+                prevToInput.value = prevTo - 1;
+                
+                // Если предыдущий диапазон стал некорректным, удаляем его
+                if (parseInt(prevRange.querySelector('.from-input').value) > parseInt(prevToInput.value)) {
+                    prevRange.remove();
+                    this.renumberDocuments();
+                    this.updateRemoveButtonsVisibility();
+                    this.adjustRanges(); // Рекурсивно корректируем
+                    return;
+                }
+            }
+        }
+    }
+
     renumberDocuments() {
-        // Получаем все контейнеры диапазонов
         const rangeContainers = this.rangesContainer.querySelectorAll('.range-container');
         
-        // Проверяем наличие диапазонов
-        if (!rangeContainers || rangeContainers.length === 0) return;
-
-        // Перебираем и переименовываем с проверкой каждого элемента
-        Array.from(rangeContainers).forEach((container, index) => {
-            try {
-                const titleElement = container.querySelector('.document-title');
-                
-                // Проверяем существование элемента и актуальность названия
-                if (titleElement) {
-                    const newTitle = `Документ ${index + 1}`;
-                    
-                    // Обновляем только если название изменилось
-                    if (titleElement.textContent !== newTitle) {
-                        titleElement.textContent = newTitle;
-                    }
-                } else {
-                    console.warn('Элемент заголовка не найден в диапазоне', container);
-                }
-            } catch (error) {
-                console.error('Ошибка при переименовании документа:', error);
+        rangeContainers.forEach((container, index) => {
+            const nameInput = container.querySelector('.document-name');
+            if (nameInput && nameInput.value.startsWith('Документ ')) {
+                nameInput.value = `Документ ${index + 1}`;
             }
         });
     }
 
     updateRemoveButtonsVisibility() {
         const ranges = this.rangesContainer.children;
-        const showRemoveButtons = ranges.length > 1;
         
+        // Показываем кнопку удаления только на последнем диапазоне (если их больше одного)
         Array.from(ranges).forEach((range, index) => {
             const removeBtn = range.querySelector('.remove-range');
             if (removeBtn) {
-                if (showRemoveButtons) {
+                if (ranges.length > 1 && index === ranges.length - 1) {
                     removeBtn.classList.remove('hidden');
                 } else {
                     removeBtn.classList.add('hidden');
@@ -468,13 +655,28 @@ class PdfSplitter {
             </svg>
             Обработка...
         `;
+        // Проверяем, что все диапазоны валидны
+        const ranges = this.getRanges();
+        const usedPages = new Set();
+        
+        for (const range of ranges) {
+            // Проверка на минимальный размер диапазона
+            if (range.from > range.to) {
+                this.showSplitError(`Диапазон "${range.name}" некорректен: начальная страница больше конечной`);
+                return;
+            }
+            
+            // Проверка на пересечение диапазонов
+            for (let page = range.from; page <= range.to; page++) {
+                if (usedPages.has(page)) {
+                    this.showSplitError(`Страница ${page} используется в нескольких диапазонах`);
+                    return;
+                }
+                usedPages.add(page);
+            }
+        }
 
         try {
-            const ranges = this.getRanges();
-            if (ranges.length === 0) {
-                throw new Error('Не выбрано ни одного диапазона');
-            }
-
             const response = await fetch(this.previewContainer.dataset.downloadUrl, {
                 method: 'POST',
                 headers: {
