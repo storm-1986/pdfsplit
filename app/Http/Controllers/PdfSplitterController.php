@@ -12,6 +12,22 @@ use Imagick;
 
 class PdfSplitterController extends Controller
 {
+    public function __construct()
+    {
+        $requiredDirs = [
+            storage_path('app/temp_pdfs'),
+            storage_path('app/temp_split'),
+            storage_path('app/public/temp_thumbs'),
+            storage_path('app/public/temp_zips')
+        ];
+
+        foreach ($requiredDirs as $dir) {
+            if (!file_exists($dir)) {
+                mkdir($dir, 0755, true);
+            }
+        }
+    }
+
     public function showUploadForm()
     {
         return view('index');
@@ -96,9 +112,16 @@ class PdfSplitterController extends Controller
         ]);
 
         try {
+            // Создаем необходимые директории
+            Storage::makeDirectory('temp_split');
+            Storage::disk('public')->makeDirectory('temp_zips');
+            
             $zipPath = storage_path("app/public/temp_zips/" . Str::uuid() . ".zip");
             $zip = new ZipArchive();
-            $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+            
+            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+                throw new \Exception("Не удалось создать ZIP-архив");
+            }
 
             // Собираем все страницы всех документов
             $allPages = [];
@@ -151,6 +174,10 @@ class PdfSplitterController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            Log::error("Download ranges error", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => $e->getMessage()
@@ -189,6 +216,12 @@ class PdfSplitterController extends Controller
 
     protected function createPdfFromRange($sourcePath, $pages, $outputPath)
     {
+        // Создаем директорию для выходного файла
+        $outputDir = dirname($outputPath);
+        if (!file_exists($outputDir)) {
+            mkdir($outputDir, 0755, true);
+        }
+
         if (!file_exists($sourcePath)) {
             throw new \Exception("Исходный PDF не найден: $sourcePath");
         }
@@ -201,38 +234,42 @@ class PdfSplitterController extends Controller
             foreach ($pages as $page) {
                 $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
                 
-                // Конвертируем страницу PDF в изображение
-                $pdf->setPage($page)
-                    ->setResolution(150)
-                    ->saveImage($tempImage);
-                
-                if (!file_exists($tempImage)) {
-                    throw new \Exception("Не удалось создать изображение для страницы $page");
+                try {
+                    $pdf->setPage($page)
+                        ->setResolution(150)
+                        ->saveImage($tempImage);
+                    
+                    if (!file_exists($tempImage)) {
+                        throw new \Exception("Не удалось создать изображение для страницы $page");
+                    }
+                    
+                    $tempImages[] = $tempImage;
+                    $pageImage = new Imagick($tempImage);
+                    $imagick->addImage($pageImage);
+                    $pageImage->clear();
+                } catch (\Exception $e) {
+                    Log::error("Error processing page $page", [
+                        'error' => $e->getMessage()
+                    ]);
+                    continue;
                 }
-                
-                $tempImages[] = $tempImage;
-                
-                // Добавляем изображение в Imagick
-                $pageImage = new Imagick($tempImage);
-                $imagick->addImage($pageImage);
-                $pageImage->clear();
             }
 
             if ($imagick->getNumberImages() === 0) {
                 throw new \Exception("Не добавлено ни одной страницы");
             }
 
-            // Конвертируем изображения обратно в PDF
             $imagick->setImageFormat('pdf');
-            $imagick->writeImages($outputPath, true);
+            if (!$imagick->writeImages($outputPath, true)) {
+                throw new \Exception("Ошибка записи PDF файла");
+            }
 
-        } catch (\Exception $e) {
-            throw new \Exception("Ошибка создания PDF: " . $e->getMessage());
+            return true;
         } finally {
             // Очистка временных файлов
             foreach ($tempImages as $tempImage) {
                 if (file_exists($tempImage)) {
-                    unlink($tempImage);
+                    @unlink($tempImage);
                 }
             }
             $imagick->clear();
