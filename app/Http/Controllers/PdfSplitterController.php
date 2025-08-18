@@ -19,26 +19,40 @@ class PdfSplitterController extends Controller
 
     public function uploadAndSplit(Request $request)
     {
-        $request->validate(['pdf' => 'required|mimes:pdf|max:50000']);
-        
         try {
+            $request->validate(['pdf' => 'required|mimes:pdf|max:50000']);
+            
             $file = $request->file('pdf');
             $originalName = $file->getClientOriginalName();
             $sessionId = Str::random(20);
             $tempDir = 'temp_pdfs/' . $sessionId;
             
             $pdfPath = $file->storeAs($tempDir, $originalName);
-            $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId);
+            
+            Log::info('File stored successfully', [
+                'path' => $pdfPath,
+                'size' => Storage::size($pdfPath),
+                'session_id' => $sessionId
+            ]);
 
-            return response()->json([
+            $response = [
                 'success' => true,
                 'original_name' => $originalName,
-                'pages' => $pages,
+                'pages' => $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId),
                 'session_id' => $sessionId,
                 'pdf_path' => $pdfPath
-            ]);
+            ];
+
+            Log::info('API Response:', $response);
+            return response()->json($response);
             
         } catch (\Exception $e) {
+            Log::error('Upload failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request' => $request->all()
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Ошибка обработки PDF: ' . $e->getMessage()
