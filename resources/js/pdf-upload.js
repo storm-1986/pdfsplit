@@ -797,6 +797,9 @@ class PdfSplitter {
             </svg>
             Обработка...
         `;
+
+        this.hideDownloadButton();
+        
         // Проверяем, что все диапазоны валидны
         const ranges = this.getRanges();
         const usedPages = new Set();
@@ -865,6 +868,13 @@ class PdfSplitter {
         
         // Вставляем после кнопки "Разделить PDF"
         this.splitButton.insertAdjacentElement('afterend', downloadBtn);
+    }
+
+    hideDownloadButton() {
+        const downloadBtn = document.getElementById('download-button-container');
+        if (downloadBtn) {
+            downloadBtn.style.display = 'none';
+        }
     }
 
     // Новый метод для генерации имени архива
