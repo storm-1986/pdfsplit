@@ -135,27 +135,44 @@ class PdfSplitter {
         const files = Array.from(this.fileInput.files);
         
         if (files.length === 0) {
-            this.showFileError('Пожалуйста, выберите PDF файлы');
+            this.showFileError('Пожалуйста, выберите файлы');
             return;
         }
 
         // Частичный сброс (сохраняем выбранные файлы)
         this.resetForm(true);
-
+        this.showLoader(files.length);
         const originalButtonHtml = this.uploadButton.innerHTML;
-        this.uploadButton.disabled = true;
-        this.uploadButton.innerHTML = `
-            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <!-- spinner icon -->
-            </svg>
-            Загрузка ${files.length} файлов...
-        `;
 
         try {
-            const uploadPromises = files.map(file => this.uploadFile(file));
-            const results = await Promise.all(uploadPromises);
+            const formData = new FormData();
             
-            this.uploadedDocuments = results.filter(r => r.success);
+            // Добавляем все файлы
+            files.forEach(file => {
+                formData.append('pdf[]', file); // Важно: pdf[] для массива
+            });
+            
+            formData.append('_token', document.querySelector('input[name="_token"]').value);
+            
+            // Добавляем флаг множественной загрузки
+            if (files.length > 1) {
+                formData.append('hasMultipleFiles', 'true');
+            }
+
+            const response = await fetch(this.uploadForm.action, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Ошибка загрузки');
+            }
+
+            // Всегда используем documents, даже если один файл
+            this.uploadedDocuments = result.documents || [];
+                
             if (this.uploadedDocuments.length > 0) {
                 this.showPreview();
             } else {
@@ -168,6 +185,17 @@ class PdfSplitter {
             this.uploadButton.disabled = false;
             this.uploadButton.innerHTML = originalButtonHtml;
         }
+    }
+
+    showLoader(fileCount) {
+        this.uploadButton.disabled = true;
+        this.uploadButton.innerHTML = `
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Обработка ${fileCount} файлов...
+        `;
     }
 
     async uploadFile(file) {
@@ -634,7 +662,7 @@ adjustRangesAfterManualEdit(editedRange) {
         }
         
         // Сбрасываем состояние кнопки загрузки
-        this.uploadButton.disabled = !keepFiles;
+        this.resetUploadButton();
         
         // Очищаем сообщения об ошибках
         const errorElement = this.uploadForm.querySelector('.upload-error');
@@ -643,6 +671,12 @@ adjustRangesAfterManualEdit(editedRange) {
         // Сбрасываем данные
         this.uploadedDocuments = [];
         this.totalPages = 0;
+    }
+
+    // Метод для сброса кнопки загрузки
+    resetUploadButton() {
+        this.uploadButton.disabled = false;
+        this.uploadButton.innerHTML = 'Загрузить';
     }
 
     async handleSplit() {

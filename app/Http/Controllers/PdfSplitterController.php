@@ -18,7 +18,8 @@ class PdfSplitterController extends Controller
             storage_path('app/temp_pdfs'),
             storage_path('app/temp_split'),
             storage_path('app/public/temp_thumbs'),
-            storage_path('app/public/temp_zips')
+            storage_path('app/public/temp_zips'),
+            storage_path('app/temp_msg') // Добавляем временную директорию для MSG
         ];
 
         foreach ($requiredDirs as $dir) {
@@ -36,51 +37,147 @@ class PdfSplitterController extends Controller
     public function uploadAndSplit(Request $request)
     {
         try {
-            $request->validate(['pdf' => 'required|mimes:pdf|max:50000']);
+            // Правильно получаем файлы (массив или одиночный файл)
+            $files = $request->allFiles()['pdf'] ?? [];
             
-            $file = $request->file('pdf');
-            $originalName = $file->getClientOriginalName();
+            // Если это одиночный файл, превращаем в массив
+            if (!is_array($files)) {
+                $files = [$files];
+            }
+
+            // Валидация для каждого файла
+            foreach ($files as $file) {
+                $extension = strtolower($file->getClientOriginalExtension());
+                if (!in_array($extension, ['pdf', 'msg'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Файл должен быть в формате PDF или MSG'
+                    ], 422);
+                }
+                
+                if ($file->getSize() > 50000000) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Размер файла не должен превышать 50MB'
+                    ], 422);
+                }
+            }
+
             $sessionId = Str::random(20);
-            $tempDir = 'temp_pdfs/' . $sessionId;
+            $allDocuments = [];
+            $documentIndex = 0;
             
-            $pdfPath = $file->storeAs($tempDir, $originalName);
-            
-            Log::info('File stored successfully', [
-                'path' => $pdfPath,
-                'size' => Storage::size($pdfPath),
+            foreach ($files as $file) {
+                if (strtolower($file->getClientOriginalExtension()) === 'msg') {
+                    $tempDir = 'temp_pdfs/' . $sessionId;
+                    Storage::makeDirectory($tempDir);
+
+                    $tempMsgPath = storage_path('app/temp_msg/' . Str::random(20) . '.msg');
+                    file_put_contents($tempMsgPath, file_get_contents($file->getRealPath()));
+
+                    $documents = $this->extractPdfFromBinary($tempMsgPath, $sessionId, $tempDir, $documentIndex);
+                    @unlink($tempMsgPath);
+
+                    if (!empty($documents)) {
+                        $allDocuments = array_merge($allDocuments, $documents);
+                        $documentIndex += count($documents);
+                    }
+                } else {
+                    $pdfPath = $file->storeAs('temp_pdfs/' . $sessionId, $file->getClientOriginalName());
+                    
+                    $allDocuments[] = [
+                        'original_name' => $file->getClientOriginalName(),
+                        'pages' => $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex),
+                        'pdf_path' => $pdfPath,
+                        'session_id' => $sessionId
+                    ];
+                    $documentIndex++;
+                }
+            }
+
+            if (empty($allDocuments)) {
+                throw new \Exception('Не удалось обработать ни один файл');
+            }
+
+            // Всегда возвращаем новый формат для единообразия
+            return response()->json([
+                'success' => true,
+                'documents' => $allDocuments,
                 'session_id' => $sessionId
             ]);
 
-            $response = [
-                'success' => true,
-                'original_name' => $originalName,
-                'pages' => $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId),
-                'session_id' => $sessionId,
-                'pdf_path' => $pdfPath
-            ];
-
-            Log::info('API Response:', $response);
-            return response()->json($response);
-            
         } catch (\Exception $e) {
             Log::error('Upload failed', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'request' => $request->all()
+                'trace' => $e->getTraceAsString()
             ]);
-            
             return response()->json([
                 'success' => false,
-                'message' => 'Ошибка обработки PDF: ' . $e->getMessage()
+                'message' => 'Ошибка обработки файла: ' . $e->getMessage()
             ], 500);
         }
     }
+
+    protected function extractPdfFromBinary($filePath, $sessionId, $tempDir, &$documentIndex)
+    {
+        $documents = [];
+        $content = file_get_contents($filePath);
+        
+        $offset = 0;
+        $pdfCount = 0;
+        
+        while (($pdfStart = strpos($content, '%PDF', $offset)) !== false) {
+            $pdfEnd = strpos($content, '%%EOF', $pdfStart);
+            
+            if ($pdfEnd === false) {
+                $nextPdf = strpos($content, '%PDF', $pdfStart + 4);
+                $pdfEnd = $nextPdf !== false ? $nextPdf : strlen($content);
+            } else {
+                $pdfEnd += 5;
+            }
+            
+            $pdfContent = substr($content, $pdfStart, $pdfEnd - $pdfStart);
+            
+            if (strlen($pdfContent) > 100 && strpos($pdfContent, '%PDF') === 0) {
+                $pdfCount++;
+                $safeName = 'document_' . $pdfCount . '.pdf';
+                $pdfPath = $tempDir . '/' . $safeName;
+                
+                Storage::put($pdfPath, $pdfContent);
+                
+                try {
+                    $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex);
+                    
+                    $documents[] = [
+                        'original_name' => $safeName,
+                        'pages' => $pages,
+                        'pdf_path' => $pdfPath,
+                        'session_id' => $sessionId
+                    ];
+                    
+                    $documentIndex++;
+                    
+                } catch (\Exception $e) {
+                    Storage::delete($pdfPath);
+                }
+            }
+            
+            $offset = $pdfStart + 4;
+        }
+        
+        return $documents;
+    }
     
-    protected function generateThumbnails($pdfPath, $sessionId)
+    protected function generateThumbnails($pdfPath, $sessionId, $documentIndex = null)
     {
         $pdf = new Pdf($pdfPath);
         $pages = [];
+        
+        // Создаем уникальную поддиректорию для каждого документа
         $thumbDir = "temp_thumbs/{$sessionId}";
+        if ($documentIndex !== null) {
+            $thumbDir .= "/doc_{$documentIndex}";
+        }
         
         Storage::disk('public')->makeDirectory($thumbDir);
         
@@ -112,7 +209,6 @@ class PdfSplitterController extends Controller
         ]);
 
         try {
-            // Создаем необходимые директории
             Storage::makeDirectory('temp_split');
             Storage::disk('public')->makeDirectory('temp_zips');
             
@@ -137,7 +233,6 @@ class PdfSplitterController extends Controller
                 $fileName = $this->sanitizeFilename($rangeData['name']) . '.pdf';
                 $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
 
-                // Создаем PDF для диапазона
                 $imagick = new Imagick();
                 $currentPage = 0;
                 
@@ -212,68 +307,6 @@ class PdfSplitterController extends Controller
         }
         
         return array_unique($pages);
-    }
-
-    protected function createPdfFromRange($sourcePath, $pages, $outputPath)
-    {
-        // Создаем директорию для выходного файла
-        $outputDir = dirname($outputPath);
-        if (!file_exists($outputDir)) {
-            mkdir($outputDir, 0755, true);
-        }
-
-        if (!file_exists($sourcePath)) {
-            throw new \Exception("Исходный PDF не найден: $sourcePath");
-        }
-
-        $pdf = new Pdf($sourcePath);
-        $imagick = new Imagick();
-        $tempImages = [];
-
-        try {
-            foreach ($pages as $page) {
-                $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
-                
-                try {
-                    $pdf->setPage($page)
-                        ->setResolution(150)
-                        ->saveImage($tempImage);
-                    
-                    if (!file_exists($tempImage)) {
-                        throw new \Exception("Не удалось создать изображение для страницы $page");
-                    }
-                    
-                    $tempImages[] = $tempImage;
-                    $pageImage = new Imagick($tempImage);
-                    $imagick->addImage($pageImage);
-                    $pageImage->clear();
-                } catch (\Exception $e) {
-                    Log::error("Error processing page $page", [
-                        'error' => $e->getMessage()
-                    ]);
-                    continue;
-                }
-            }
-
-            if ($imagick->getNumberImages() === 0) {
-                throw new \Exception("Не добавлено ни одной страницы");
-            }
-
-            $imagick->setImageFormat('pdf');
-            if (!$imagick->writeImages($outputPath, true)) {
-                throw new \Exception("Ошибка записи PDF файла");
-            }
-
-            return true;
-        } finally {
-            // Очистка временных файлов
-            foreach ($tempImages as $tempImage) {
-                if (file_exists($tempImage)) {
-                    @unlink($tempImage);
-                }
-            }
-            $imagick->clear();
-        }
     }
 
     public function cleanup($sessionId)
