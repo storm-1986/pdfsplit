@@ -148,3 +148,13 @@
 #download-button-container {
     animation: fadeIn 0.3s ease-out;
 }
+
+/* Подсветка */
+.thumbnail-page {
+    transition: all 0.3s ease;
+}
+
+.range-highlight {
+    font-weight: 600;
+    font-size: 0.7rem;
+}

@@ -244,57 +244,55 @@ class PdfSplitter {
         const previewContainer = document.getElementById('documents-preview');
         previewContainer.innerHTML = '';
         
-        // 1. Сначала вычисляем общее количество страниц
         this.totalPages = this.uploadedDocuments.reduce(
             (total, doc) => total + doc.pages.length, 
             0
         );
         
         let globalPageNum = 1;
-        let currentPage = 1; // Отслеживаем текущую страницу для диапазонов
+        let currentPage = 1;
         
-        // Очищаем предыдущие диапазоны
         this.rangesContainer.innerHTML = '';
         
-        // Создаем превью и диапазоны для каждого документа
-        this.uploadedDocuments.forEach((doc, index) => {
+        this.uploadedDocuments.forEach((doc, docIndex) => {
             const docPageCount = doc.pages.length;
             const docName = doc.original_name.replace(/\.pdf$/i, '');
             
-            // 2. Создаем контейнер документа
-            const docContainer = document.createElement('div');
-            docContainer.className = 'bg-white rounded-lg shadow-sm p-4 border border-gray-200 mb-6';
-            
-            // 3. Добавляем заголовок документа
-            const title = document.createElement('h3');
-            title.className = 'text-lg font-semibold text-gray-800 mb-3';
-            title.textContent = `${index + 1}. ${doc.original_name}`;
-            docContainer.appendChild(title);
-            
-            // 4. Создаем диапазон для этого документа
             const rangeEnd = currentPage + docPageCount - 1;
             this.addRange(
-                currentPage,      // Начало диапазона
-                rangeEnd,         // Конец диапазона
-                docName           // Имя файла без .pdf
+                currentPage,
+                rangeEnd,
+                docName
             );
             currentPage = rangeEnd + 1;
             
-            // 5. Добавляем миниатюры страниц
+            const docContainer = document.createElement('div');
+            docContainer.className = 'bg-white rounded-lg shadow-sm p-4 border border-gray-200 mb-6';
+            docContainer.dataset.docIndex = docIndex;
+            
+            const title = document.createElement('h3');
+            title.className = 'text-lg font-semibold text-gray-800 mb-3';
+            title.textContent = `${docIndex + 1}. ${doc.original_name}`;
+            docContainer.appendChild(title);
+            
             const thumbsContainer = document.createElement('div');
             thumbsContainer.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3';
             
-            doc.pages.forEach(page => {
+            doc.pages.forEach((page, pageIndex) => {
+                const pageNumber = globalPageNum++;
                 const thumb = document.createElement('div');
-                thumb.className = 'border rounded overflow-hidden hover:shadow-md transition';
+                thumb.className = 'thumbnail-page border-2 border-gray-200 rounded overflow-hidden hover:shadow-md transition';
+                thumb.dataset.pageNumber = pageNumber;
+                
                 thumb.innerHTML = `
-                    <a href="${page.image_url}" data-glightbox="title: Страница ${globalPageNum}">
+                    <a href="${page.image_url}" data-glightbox="title: Страница ${pageNumber}">
                         <img src="${page.image_url}" 
-                            alt="Страница ${globalPageNum}" 
+                            alt="Страница ${pageNumber}" 
                             class="w-full object-contain">
                     </a>
-                    <div class="p-2 text-center bg-gray-50 border-t">
-                        <span class="text-xs font-medium">Стр. ${globalPageNum++}</span>
+                    <div class="p-2 text-center bg-gray-50 border-t flex justify-between items-center">
+                        <span class="text-xs font-medium">Стр. ${pageNumber}</span>
+                        <span class="text-xs range-highlight hidden"></span>
                     </div>
                 `;
                 thumbsContainer.appendChild(thumb);
@@ -304,18 +302,76 @@ class PdfSplitter {
             previewContainer.appendChild(docContainer);
         });
         
-        // 6. Обновляем GLightbox
+        // Инициализируем подсветку
+        this.updateThumbnailsHighlight();
+        
         if (window._glightbox) {
             window._glightbox.reload();
         }
     }
 
-    updateAllRangeInputs() {
-        document.querySelectorAll('.from-input, .to-input').forEach(input => {
-            input.setAttribute('max', this.totalPages);
-            const value = parseInt(input.value);
-            if (value > this.totalPages) {
-                input.value = this.totalPages;
+    updateThumbnailsHighlight() {
+        // Сбрасываем все подсветки
+        document.querySelectorAll('.thumbnail-page').forEach(thumb => {
+            // Все возможные цветовые классы для удаления
+            const colorTypes = ['blue', 'green', 'yellow', 'purple', 'pink', 'indigo',
+                            'red', 'teal', 'orange', 'cyan', 'lime', 'amber',
+                            'emerald', 'violet', 'fuchsia', 'rose', 'sky', 'gray']; // Добавили gray
+            
+            const classesToRemove = [];
+            colorTypes.forEach(color => {
+                classesToRemove.push(`border-${color}-500`, `shadow-${color}-100`);
+            });
+            
+            thumb.classList.remove(...classesToRemove);
+            // Убираем border-gray-200 из базового класса
+            thumb.className = 'thumbnail-page border-2 rounded overflow-hidden hover:shadow-md transition';
+            
+            // Добавляем серую рамку по умолчанию
+            thumb.classList.add('border-gray-200');
+            
+            // Удаляем старые бейджи
+            const badge = thumb.querySelector('.range-highlight');
+            if (badge) {
+                badge.remove();
+            }
+        });
+        
+        // Получаем текущие диапазоны
+        const ranges = this.getRanges();
+        const colors = [
+            'blue', 'green', 'yellow', 'purple', 'pink', 'indigo',
+            'red', 'teal', 'orange', 'cyan', 'lime', 'amber',
+            'emerald', 'violet', 'fuchsia', 'rose', 'sky'
+        ];
+        
+        ranges.forEach((range, rangeIndex) => {
+            const colorClass = colors[rangeIndex % colors.length];
+            
+            for (let page = range.from; page <= range.to; page++) {
+                const thumb = document.querySelector(`.thumbnail-page[data-page-number="${page}"]`);
+                if (thumb) {
+                    // Убираем серую рамку и добавляем цветную
+                    thumb.classList.remove('border-gray-200');
+                    thumb.classList.add(`border-${colorClass}-500`, `shadow-${colorClass}-100`);
+                    
+                    // Добавляем бейдж с номером диапазона
+                    const badgeContainer = thumb.querySelector('.bg-gray-50');
+                    if (badgeContainer) {
+                        const badge = document.createElement('span');
+                        badge.className = `range-highlight text-xs px-2 py-1 rounded ml-2 bg-${colorClass}-100 text-${colorClass}-800 font-medium`;
+                        badge.textContent = `Д${rangeIndex + 1}`;
+                        badgeContainer.appendChild(badge);
+                    }
+                }
+            }
+        });
+
+        // Для страниц не входящих в диапазоны оставляем серую рамку
+        document.querySelectorAll('.thumbnail-page').forEach(thumb => {
+            if (!thumb.classList.toString().includes('border-') || 
+                thumb.classList.toString().includes('border-gray-200')) {
+                thumb.classList.add('border-gray-200');
             }
         });
     }
@@ -323,7 +379,27 @@ class PdfSplitter {
     addRange(from = null, to = null, fileName) {
         const ranges = this.getRanges();
         const docNumber = ranges.length + 1;
-        
+        const rangeColors = [
+            'border-blue-500 bg-blue-50', 
+            'border-green-500 bg-green-50',
+            'border-yellow-500 bg-yellow-50', 
+            'border-purple-500 bg-purple-50',
+            'border-pink-500 bg-pink-50', 
+            'border-indigo-500 bg-indigo-50',
+            'border-red-500 bg-red-50', 
+            'border-teal-500 bg-teal-50',
+            'border-orange-500 bg-orange-50',
+            'border-cyan-500 bg-cyan-50',
+            'border-lime-500 bg-lime-50',
+            'border-amber-500 bg-amber-50',
+            'border-emerald-500 bg-emerald-50',
+            'border-violet-500 bg-violet-50',
+            'border-fuchsia-500 bg-fuchsia-50',
+            'border-rose-500 bg-rose-50',
+            'border-sky-500 bg-sky-50'
+        ];
+        const colorClass = rangeColors[(docNumber - 1) % rangeColors.length];
+
         if (ranges.length >= this.totalPages) {
             alert(`Максимальное количество диапазонов: ${this.totalPages}`);
             return;
@@ -405,7 +481,7 @@ class PdfSplitter {
         const newName = fileName || `Документ ${docNumber}`;
         
         rangeElement.innerHTML = `
-            <div class="range-container">
+            <div class="range-container ${colorClass} p-4 rounded-lg border">
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
                         value="${newName}" 
@@ -447,6 +523,7 @@ class PdfSplitter {
                     rangeElement.remove();
                     this.renumberDocuments();
                     this.updateRemoveButtonsVisibility();
+                    this.updateThumbnailsHighlight();
                 }
             });
         }
@@ -457,14 +534,17 @@ class PdfSplitter {
         
         fromInput.addEventListener('change', () => {
             this.adjustRangesAfterManualEdit(rangeElement);
+            this.updateThumbnailsHighlight();
         });
-        
+
         toInput.addEventListener('change', () => {
             this.adjustRangesAfterManualEdit(rangeElement);
+            this.updateThumbnailsHighlight();
         });
 
         this.rangesContainer.appendChild(rangeElement);
         this.updateRemoveButtonsVisibility();
+        this.updateThumbnailsHighlight();
     }
 
     // Новый метод для корректировки последнего диапазона после удаления
@@ -480,41 +560,41 @@ class PdfSplitter {
         lastToInput.value = this.totalPages;
     }
 
-adjustRangesAfterManualEdit(editedRange) {
-    const rangeElements = Array.from(this.rangesContainer.children);
-    const currentIndex = rangeElements.indexOf(editedRange);
-    
-    if (currentIndex === -1) return;
-
-    const fromInput = editedRange.querySelector('.from-input');
-    const toInput = editedRange.querySelector('.to-input');
-    
-    let from = parseInt(fromInput.value) || 1;
-    let to = parseInt(toInput.value) || 1;
-
-    // Корректируем значения текущего диапазона
-    if (from < 1) from = 1;
-    if (to > this.totalPages) to = this.totalPages;
-    if (from > to) {
-        // Если начало больше конца, меняем их местами
-        [from, to] = [to, from];
-    }
-    
-    fromInput.value = from;
-    toInput.value = to;
-
-    // Корректируем предыдущий диапазон (если есть)
-    if (currentIndex > 0) {
-        const prevRange = rangeElements[currentIndex - 1];
-        const prevToInput = prevRange.querySelector('.to-input');
-        const prevTo = parseInt(prevToInput.value) || 1;
+    adjustRangesAfterManualEdit(editedRange) {
+        const rangeElements = Array.from(this.rangesContainer.children);
+        const currentIndex = rangeElements.indexOf(editedRange);
         
-        if (from <= prevTo) {
-            prevToInput.value = from - 1;
-            // Рекурсивно корректируем предыдущий диапазон
-            this.adjustRangesAfterManualEdit(prevRange);
+        if (currentIndex === -1) return;
+
+        const fromInput = editedRange.querySelector('.from-input');
+        const toInput = editedRange.querySelector('.to-input');
+        
+        let from = parseInt(fromInput.value) || 1;
+        let to = parseInt(toInput.value) || 1;
+
+        // Корректируем значения текущего диапазона
+        if (from < 1) from = 1;
+        if (to > this.totalPages) to = this.totalPages;
+        if (from > to) {
+            // Если начало больше конца, меняем их местами
+            [from, to] = [to, from];
         }
-    }
+        
+        fromInput.value = from;
+        toInput.value = to;
+
+        // Корректируем предыдущий диапазон (если есть)
+        if (currentIndex > 0) {
+            const prevRange = rangeElements[currentIndex - 1];
+            const prevToInput = prevRange.querySelector('.to-input');
+            const prevTo = parseInt(prevToInput.value) || 1;
+            
+            if (from <= prevTo) {
+                prevToInput.value = from - 1;
+                // Рекурсивно корректируем предыдущий диапазон
+                this.adjustRangesAfterManualEdit(prevRange);
+            }
+        }
 
         // Корректируем следующий диапазон (если есть)
         if (currentIndex < rangeElements.length - 1) {
@@ -556,6 +636,8 @@ adjustRangesAfterManualEdit(editedRange) {
                 toInput.value = this.totalPages;
             }
         }
+
+        this.updateThumbnailsHighlight();
     }
 
     adjustRanges() {
@@ -621,13 +703,39 @@ adjustRangesAfterManualEdit(editedRange) {
 
     renumberDocuments() {
         const rangeContainers = this.rangesContainer.querySelectorAll('.range-container');
+        const rangeColors = [
+            'border-blue-500 bg-blue-50', 
+            'border-green-500 bg-green-50',
+            'border-yellow-500 bg-yellow-50', 
+            'border-purple-500 bg-purple-50',
+            'border-pink-500 bg-pink-50', 
+            'border-indigo-500 bg-indigo-50',
+            'border-red-500 bg-red-50', 
+            'border-teal-500 bg-teal-50',
+            'border-orange-500 bg-orange-50',
+            'border-cyan-500 bg-cyan-50',
+            'border-lime-500 bg-lime-50',
+            'border-amber-500 bg-amber-50',
+            'border-emerald-500 bg-emerald-50',
+            'border-violet-500 bg-violet-50',
+            'border-fuchsia-500 bg-fuchsia-50',
+            'border-rose-500 bg-rose-50',
+            'border-sky-500 bg-sky-50'
+        ];
         
         rangeContainers.forEach((container, index) => {
+            // Обновляем цвет контейнера
+            const colorClass = rangeColors[index % rangeColors.length];
+            container.className = `range-container ${colorClass} p-4 rounded-lg border`;
+            
+            // Обновляем имя документа если нужно
             const nameInput = container.querySelector('.document-name');
             if (nameInput && nameInput.value.startsWith('Документ ')) {
                 nameInput.value = `Документ ${index + 1}`;
             }
         });
+        
+        this.updateThumbnailsHighlight(); // Обновляем подсветку после перенумерации
     }
 
     updateRemoveButtonsVisibility() {
