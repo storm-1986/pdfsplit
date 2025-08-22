@@ -77,12 +77,12 @@ class PdfSplitter {
 
         uploadArea.addEventListener('drop', (e) => {
             const files = e.dataTransfer.files;
-            const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
             
-            if (pdfFiles.length > 0) {
-                this.fileInput.files = e.dataTransfer.files;
-                this.showSelectedFiles(pdfFiles); // Используем новый метод
-                this.uploadButton.disabled = false;
+            if (files.length > 0) {
+                // Создаем искусственное событие change для fileInput
+                this.fileInput.files = files;
+                const event = new Event('change', { bubbles: true });
+                this.fileInput.dispatchEvent(event);
                 
                 uploadArea.classList.add('border-green-500');
                 setTimeout(() => uploadArea.classList.remove('border-green-500'), 1000);
