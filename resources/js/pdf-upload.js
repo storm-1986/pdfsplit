@@ -101,16 +101,45 @@ class PdfSplitter {
         }
     }
 
-    showSelectedFiles(files) {
+    showSelectedFiles(fileList) {
         const container = document.querySelector('.file-info-container');
         const fileNameSpan = document.querySelector('.file-name');
         
         if (container && fileNameSpan) {
-            const names = Array.from(files).map(f => f.name).join(', ');
-            fileNameSpan.textContent = files.length > 1 
-                ? `${files.length} файлов: ${names}` 
-                : names;
+            // Очищаем предыдущее содержимое
+            fileNameSpan.innerHTML = '';
+            
+            // Преобразуем FileList в массив
+            const files = Array.from(fileList);
+            
+            // Создаем список файлов
+            files.forEach((file, index) => {
+                const fileElement = document.createElement('div');
+                fileElement.className = 'file-item flex items-center mb-1 last:mb-0';
+                
+                // Определяем тип файла по расширению, так как file.type может быть пустым для MSG
+                const isPDF = file.name.toLowerCase().endsWith('.pdf');
+                const isMSG = file.name.toLowerCase().endsWith('.msg');
+                
+                const icon = isPDF 
+                    ? '<svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z"/></svg>'
+                    : '<svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>';
+                
+                fileElement.innerHTML = `
+                    ${icon}
+                    <span class="text-sm truncate">${file.name}</span>
+                `;
+                
+                fileNameSpan.appendChild(fileElement);
+            });
+            
+            // Показываем контейнер
             container.classList.remove('hidden');
+            
+            // Автоматически расширяем блок если много файлов
+            if (files.length > 2) {
+                container.classList.add('overflow-y-auto', 'max-h-32');
+            }
         }
     }
 
@@ -123,9 +152,10 @@ class PdfSplitter {
                 fileInfoContainer.classList.add('hidden');
                 const fileNameSpan = fileInfoContainer.querySelector('.file-name');
                 if (fileNameSpan) {
-                    fileNameSpan.textContent = '';
+                    fileNameSpan.innerHTML = '';
                 }
                 fileInfoContainer.style.animation = '';
+                fileInfoContainer.classList.remove('overflow-y-auto', 'max-h-32');
             }, 300);
         }
     }
@@ -799,7 +829,7 @@ class PdfSplitter {
         `;
 
         this.hideDownloadButton();
-        
+
         // Проверяем, что все диапазоны валидны
         const ranges = this.getRanges();
         const usedPages = new Set();

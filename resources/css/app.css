@@ -38,28 +38,6 @@
     }
 }
 
-.file-name {
-    max-width: 300px;
-}
-
-/* Для мобильных устройств */
-@media (max-width: 640px) {
-    .file-name {
-        max-width: 200px;
-    }
-}
-
-.file-info-container {
-    animation: fadeIn 0.3s ease-out;
-    border: 1px solid #e5e7eb;
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.file-info-container.hidden {
-    opacity: 0;
-    transform: translateY(-5px);
-}
-
 /* Анимация появления */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-5px); }
@@ -157,4 +135,46 @@
 .range-highlight {
     font-weight: 600;
     font-size: 0.7rem;
+}
+
+/* Список загружаемых файлов */
+
+.file-info {
+    display: flex;
+    align-items: flex-start;
+}
+
+.file-name {
+    max-width: 300px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+/* Для мобильных устройств */
+@media (max-width: 640px) {
+    .file-name {
+        max-width: 200px;
+    }
+}
+
+.file-item {
+    line-height: 1.2;
+}
+
+.file-info-container {
+    max-height: 4rem;
+    animation: fadeIn 0.3s ease-out;
+    border: 1px solid #e5e7eb;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.file-info-container.max-h-32 {
+    max-height: 8rem;
+}
+
+.file-info-container.hidden {
+    opacity: 0;
+    transform: translateY(-5px);
 }

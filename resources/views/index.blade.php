@@ -19,11 +19,8 @@
 
         <!-- Контейнер для информации о выбранном файле -->
         <div class="file-info-container mt-3 mb-4 px-4 py-3 bg-gray-50 rounded-lg hidden">
-            <div class="file-info text-sm font-medium text-gray-700 flex items-center">
-                <svg class="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                <span class="file-name truncate"></span>
+            <div class="file-info text-sm font-medium text-gray-700">
+                <div class="file-name overflow-hidden"></div>
             </div>
         </div>
 
