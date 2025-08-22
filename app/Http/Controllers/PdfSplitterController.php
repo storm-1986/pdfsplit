@@ -282,7 +282,18 @@ class PdfSplitterController extends Controller
 
     private function sanitizeFilename($name)
     {
-        return preg_replace('/[^a-zA-Z0-9_\-]/', '', $name);
+        // Удаляем только действительно опасные символы, разрешаем русские буквы
+        $name = preg_replace('/[<>:"\/\\|?*]/', '', $name);
+        
+        // Заменяем пробелы на подчеркивания
+        $name = str_replace(' ', '_', $name);
+        
+        // Убедимся что есть расширение
+        if (!pathinfo($name, PATHINFO_EXTENSION)) {
+            $name .= '.pdf';
+        }
+        
+        return $name;
     }
 
     protected function parseRange($range, $maxPages)
