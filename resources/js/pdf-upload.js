@@ -409,6 +409,32 @@ class PdfSplitter {
     addRange(from = null, to = null, fileName) {
         const ranges = this.getRanges();
         const docNumber = ranges.length + 1;
+        // Определяем тип документа по имени файла
+        let selectedType = '134'; // По умолчанию "Прочие документы"
+        if (fileName) {
+            const lowerName = fileName.toLowerCase();
+            
+            // Протокол
+            if (/протокол|protokol|protocol/i.test(lowerName)) {
+                selectedType = '14';
+            } 
+            // Приложение
+            else if (/приложение|прил|pril/i.test(lowerName)) {
+                selectedType = '15';
+            } 
+            // Доп.соглашение
+            else if (/соглашение|допсоглашение|дс_|доп|dop|доп\.|доп_|dop\.|dop_/i.test(lowerName)) {
+                selectedType = '16';
+            } 
+            // Договор
+            else if (/договор|dogovor|contract/i.test(lowerName)) {
+                selectedType = '91';
+            } 
+            // Письма
+            else if (/письмо|pismo|letter/i.test(lowerName)) {
+                selectedType = '93';
+            }
+        }
         const rangeColors = [
             'border-blue-500 bg-blue-50', 
             'border-green-500 bg-green-50',
@@ -514,7 +540,7 @@ class PdfSplitter {
             <div class="range-container ${colorClass} p-4 rounded-lg border">
                 <div class="flex justify-between items-center mb-2">
                     <input type="text" 
-                        value="${newName}" 
+                        value="${fileName || `Документ ${docNumber}`}" 
                         class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         placeholder="Название документа">
                     <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer ${ranges.length === 0 ? 'hidden' : ''}">
@@ -525,12 +551,12 @@ class PdfSplitter {
                 </div>
                 <div class="flex items-center space-x-3 mb-2">
                     <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                        <option value="14">Протокол к договору</option>
-                        <option value="15">Приложение к договору</option>
-                        <option value="16">Доп.соглашение</option>
-                        <option value="91">Договор с покупателем</option>
-                        <option value="93">Письма</option>
-                        <option value="134" selected>Прочие документы</option>
+                        <option value="14" ${selectedType === '14' ? 'selected' : ''}>Протокол к договору</option>
+                        <option value="15" ${selectedType === '15' ? 'selected' : ''}>Приложение к договору</option>
+                        <option value="16" ${selectedType === '16' ? 'selected' : ''}>Доп.соглашение</option>
+                        <option value="91" ${selectedType === '91' ? 'selected' : ''}>Договор с покупателем</option>
+                        <option value="93" ${selectedType === '93' ? 'selected' : ''}>Письма</option>
+                        <option value="134" ${selectedType === '134' ? 'selected' : ''}>Прочие документы</option>
                     </select>
                     <input type="text" class="system-number border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full sm:w-32 md:w-35" placeholder="Системный номер">
                 </div>
