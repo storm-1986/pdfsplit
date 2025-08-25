@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 use Spatie\PdfToImage\Pdf;
 use ZipArchive;
 use Imagick;
+use Hfig\MAPI\MapiMessageFactory;
+use Hfig\MAPI\OLE\Pear\DocumentFactory;
 
 class PdfSplitterController extends Controller
 {
@@ -121,8 +123,129 @@ class PdfSplitterController extends Controller
     protected function extractPdfFromBinary($filePath, $sessionId, $tempDir, &$documentIndex)
     {
         $documents = [];
+        
+        try {
+            // Пробуем MAPI-парсер для Outlook MSG
+            $documents = $this->extractWithMapi($filePath, $sessionId, $tempDir, $documentIndex);
+            
+            if (!empty($documents)) {
+                return $documents;
+            }
+            
+            // Если MAPI не сработал, используем бинарный fallback
+            Log::debug('MAPI parser found no attachments, using binary fallback');
+            return $this->extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, $documentIndex);
+            
+        } catch (\Exception $e) {
+            Log::error('MAPI parser failed, using binary fallback', [
+                'error' => $e->getMessage(),
+                'file' => $filePath
+            ]);
+            return $this->extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, $documentIndex);
+        }
+    }
+
+    protected function extractWithMapi($filePath, $sessionId, $tempDir, &$documentIndex)
+    {
+        $documents = [];
+        
+        try {
+            // Создаем фабрики согласно документации
+            $messageFactory = new MapiMessageFactory();
+            $documentFactory = new DocumentFactory(); 
+            
+            // Открываем MSG-файл
+            $ole = $documentFactory->createFromFile($filePath);
+            $message = $messageFactory->parseMessage($ole);
+            
+            // Получаем вложения
+            $attachments = $message->getAttachments();
+            
+            Log::debug('MAPI found attachments: ' . count($attachments));
+            
+            foreach ($attachments as $attachment) {
+                try {
+                    // Получаем свойства вложения
+                    $props = $attachment->properties;
+                    
+                    // Пытаемся получить имя файла
+                    $filename = $props['attach_long_filename'] ?? 
+                            $props['display_name'] ?? 
+                            $props['attach_filename'] ?? 
+                            'document_' . uniqid();
+                    
+                    // Добавляем расширение если отсутствует
+                    if (!pathinfo($filename, PATHINFO_EXTENSION)) {
+                        $filename .= '.pdf';
+                    }
+                    
+                    // Проверяем что это PDF по расширению
+                    $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+                    if ($extension !== 'pdf') {
+                        Log::debug('Skipping non-PDF attachment: ' . $filename);
+                        continue;
+                    }
+                    
+                    Log::debug('Processing PDF attachment: ' . $filename);
+                    
+                    // Получаем содержимое вложения через свойство
+                    $content = $props['attach_data'] ?? $props['attach_data_bin'] ?? null;
+                    
+                    if (!empty($content) && is_string($content) && strpos($content, '%PDF') === 0) {
+                        $safeName = $this->sanitizeFilename($filename);
+                        $pdfPath = $tempDir . '/' . $safeName;
+                        
+                        Storage::put($pdfPath, $content);
+                        
+                        try {
+                            $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex);
+                            
+                            $documents[] = [
+                                'original_name' => $safeName,
+                                'pages' => $pages,
+                                'pdf_path' => $pdfPath,
+                                'session_id' => $sessionId
+                            ];
+                            
+                            $documentIndex++;
+                            
+                            Log::info('MAPI successfully extracted PDF: ' . $safeName);
+                            
+                        } catch (\Exception $e) {
+                            Log::error('Failed to process PDF: ' . $safeName, ['error' => $e->getMessage()]);
+                            Storage::delete($pdfPath);
+                        }
+                    } else {
+                        Log::debug('Attachment content is not PDF or empty: ' . $filename);
+                    }
+                    
+                } catch (\Exception $e) {
+                    Log::warning('Failed to process MAPI attachment', [
+                        'error' => $e->getMessage(),
+                        'filename' => $filename ?? 'unknown'
+                    ]);
+                    continue;
+                }
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('MAPI parsing failed', [
+                'error' => $e->getMessage(),
+                'file' => $filePath,
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
+        
+        return $documents;
+    }
+
+    protected function extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, &$documentIndex)
+    {
+        $documents = [];
         $content = file_get_contents($filePath);
         
+        // Ищем PDF файлы по сигнатуре
         $offset = 0;
         $pdfCount = 0;
         
@@ -140,6 +263,8 @@ class PdfSplitterController extends Controller
             
             if (strlen($pdfContent) > 100 && strpos($pdfContent, '%PDF') === 0) {
                 $pdfCount++;
+                
+                // Генерируем имя на основе номера документа
                 $safeName = 'document_' . $pdfCount . '.pdf';
                 $pdfPath = $tempDir . '/' . $safeName;
                 
@@ -167,7 +292,7 @@ class PdfSplitterController extends Controller
         
         return $documents;
     }
-    
+
     protected function generateThumbnails($pdfPath, $sessionId, $documentIndex = null)
     {
         $pdf = new Pdf($pdfPath);
