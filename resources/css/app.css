@@ -178,3 +178,30 @@
     opacity: 0;
     transform: translateY(-5px);
 }
+
+/* Стили для выпадающего списка контрагентов */
+#counterparty-results {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+#counterparty-results::-webkit-scrollbar {
+    width: 6px;
+}
+
+#counterparty-results::-webkit-scrollbar-track {
+    background: #f1f5f9;
+}
+
+#counterparty-results::-webkit-scrollbar-thumb {
+    background-color: #cbd5e1;
+    border-radius: 3px;
+}
+
+#counterparty-results div:hover {
+    background-color: #f3f4f6;
+}
+
+#counterparty-results div:active {
+    background-color: #e5e7eb;
+}

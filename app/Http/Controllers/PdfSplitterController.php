@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Spatie\PdfToImage\Pdf;
 use ZipArchive;
@@ -14,6 +15,8 @@ use Hfig\MAPI\OLE\Pear\DocumentFactory;
 
 class PdfSplitterController extends Controller
 {
+    private $bearerToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJQbGF0Zm9ybSBmb3IgZGV2ZWxvcG1lbnQiLCJ1c2VybmFtZSI6Indkb2MiLCJpYXQiOjE3NTYyMTA2NjksImlzcyI6IlNwcmluZy1Ub29sLVNlcnZlciIsImV4cCI6MTc1NjI5NzA2OX0.XaGxotlJmpejJ5WCSmWR7W_DGVicubeDbB34emrv8Sg';
+
     public function __construct()
     {
         $requiredDirs = [
@@ -33,7 +36,37 @@ class PdfSplitterController extends Controller
 
     public function showUploadForm()
     {
-        return view('index');
+        try {
+            $counterparties = $this->getCounterparties();
+            return view('index', compact('counterparties'));
+        } catch (\Exception $e) {
+            Log::error('Error loading counterparties: ' . $e->getMessage());
+            $counterparties = [];
+            return view('index', compact('counterparties'));
+        }
+    }
+    
+    private function getCounterparties()
+    {
+        try {
+            $response = Http::withOptions([
+                'verify' => false,
+            ])->withHeaders([
+                'Authorization' => 'Bearer ' . $this->bearerToken,
+                'Content-Type' => 'application/json',
+            ])->timeout(30)->withBody('{}', 'application/json')->post('https://edi1.savushkin.com:5050/web/docs/clients');
+            
+            if ($response->successful()) {
+                return $response->json();
+            }
+            
+            Log::error('Не удалось загрузить контрагентов: ' . $response->status());
+            return [];
+
+        } catch (\Exception $e) {
+            Log::error('Ошибка при загрузке контрагентов: ' . $e->getMessage());
+            return [];
+        }
     }
 
     public function uploadAndSplit(Request $request)

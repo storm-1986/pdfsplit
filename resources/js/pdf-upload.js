@@ -10,7 +10,11 @@ class PdfSplitter {
         this.rangesContainer = document.getElementById('ranges-container');
         this.addRangeBtn = document.getElementById('add-range');
         this.splitButton = document.getElementById('split-button');
-        
+
+        this.counterpartySelect = document.getElementById('counterparty-select');
+        this.selectedCounterparty = null;
+        this.isResultsVisible = false;
+                
         // Явно находим кнопку загрузки
         this.uploadButton = this.uploadForm.querySelector('button[type="submit"]');
         
@@ -19,6 +23,7 @@ class PdfSplitter {
         
         this.initEventListeners();
         this.setupDragAndDrop();
+        this.initCustomCounterpartySelect();
 
         if (!this.splitButton) {
             console.error('Элемент split-button не найден');
@@ -843,6 +848,7 @@ class PdfSplitter {
     }
 
     async handleSplit() {
+        const selectedCounterparty = this.getSelectedCounterparty();
         const originalHtml = this.splitButton.innerHTML;
         this.splitButton.disabled = true;
         this.splitButton.innerHTML = `
@@ -988,6 +994,134 @@ class PdfSplitter {
         });
         
         return ranges;
+    }
+
+    initCustomCounterpartySelect() {
+        if (!this.counterpartySelect) return;
+
+        // Сохраняем оригинальные options
+        const originalOptions = Array.from(this.counterpartySelect.options);
+        
+        // Создаем контейнер для кастомного select
+        const customSelectContainer = document.createElement('div');
+        customSelectContainer.className = 'relative';
+        this.counterpartySelect.parentNode.appendChild(customSelectContainer);
+
+        // Создаем поле поиска
+        this.counterpartySearch = document.createElement('input');
+        this.counterpartySearch.type = 'text';
+        this.counterpartySearch.placeholder = 'Поиск контрагента...';
+        this.counterpartySearch.className = 'w-full px-3 py-2 border border-gray-300 rounded-md mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        customSelectContainer.appendChild(this.counterpartySearch);
+
+        // Создаем контейнер для результатов поиска
+        const resultsContainer = document.createElement('div');
+        resultsContainer.className = 'absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg hidden max-h-60 overflow-y-auto';
+        resultsContainer.id = 'counterparty-results';
+        customSelectContainer.appendChild(resultsContainer);
+
+        // Скрываем оригинальный select
+        this.counterpartySelect.style.display = 'none';
+
+        // Обработка фокуса
+        this.counterpartySearch.addEventListener('focus', () => {
+            this.showResults(originalOptions, this.counterpartySearch.value);
+        });
+
+        // Обработка ввода - показываем результаты при каждом изменении
+        this.counterpartySearch.addEventListener('input', (e) => {
+            this.showResults(originalOptions, e.target.value);
+        });
+
+        // Обработка клика по документу - скрываем результаты если кликнули вне
+        document.addEventListener('click', (e) => {
+            if (!customSelectContainer.contains(e.target)) {
+                this.hideResults();
+            }
+        });
+
+        // Обработка клавиш - скрываем результаты при нажатии Escape
+        this.counterpartySearch.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.hideResults();
+            }
+        });
+
+        // Предотвращаем скрытие при клике внутри результатов
+        resultsContainer.addEventListener('mousedown', (e) => {
+            e.preventDefault(); // Предотвращаем blur поля поиска
+        });
+    }
+
+    showResults(options, searchTerm) {
+        const resultsContainer = document.getElementById('counterparty-results');
+        if (!resultsContainer) return;
+
+        this.populateResults(options, searchTerm);
+        resultsContainer.classList.remove('hidden');
+        this.isResultsVisible = true;
+    }
+
+    hideResults() {
+        const resultsContainer = document.getElementById('counterparty-results');
+        if (resultsContainer) {
+            resultsContainer.classList.add('hidden');
+            this.isResultsVisible = false;
+        }
+    }
+
+    populateResults(options, searchTerm) {
+        const resultsContainer = document.getElementById('counterparty-results');
+        if (!resultsContainer) return;
+
+        resultsContainer.innerHTML = '';
+        const searchLower = searchTerm.toLowerCase();
+
+        // Всегда показываем все options при пустом поиске
+        const filteredOptions = searchLower === '' 
+            ? options.filter(opt => opt.value !== '')
+            : options.filter(opt => opt.value !== '' && opt.text.toLowerCase().includes(searchLower));
+
+        filteredOptions.forEach(option => {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0';
+            resultItem.textContent = option.text;
+            
+            resultItem.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.selectCounterparty(option);
+            });
+
+            resultsContainer.appendChild(resultItem);
+        });
+
+        if (filteredOptions.length === 0) {
+            const noResults = document.createElement('div');
+            noResults.className = 'px-3 py-2 text-gray-500';
+            noResults.textContent = 'Контрагенты не найдены';
+            resultsContainer.appendChild(noResults);
+        }
+    }
+
+    selectCounterparty(option) {
+        this.counterpartySearch.value = option.text;
+        this.selectedCounterparty = {
+            kpl: option.value,
+            name: option.getAttribute('data-name') || option.text
+        };
+        
+        // Скрываем результаты после выбора
+        this.hideResults();
+        
+        // Фокус остается на поле поиска для возможного редактирования
+        this.counterpartySearch.focus();
+        
+        // Выделяем весь текст для удобства редактирования
+        this.counterpartySearch.select();
+    }
+
+    getSelectedCounterparty() {
+        return this.selectedCounterparty;
     }
 }
 

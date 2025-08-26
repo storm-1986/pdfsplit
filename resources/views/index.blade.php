@@ -50,6 +50,18 @@
         <!-- Правая колонка - настройки разделения (без изменений) -->
         <div class="w-full md:w-1/3">
             <div id="split-options" class="bg-gray-50 p-5 rounded-lg border border-gray-200 sticky top-15">
+                <!-- Выпадающий список контрагентов -->
+                <div class="mb-4">
+                    <select id="counterparty-select" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Выберите контрагента</option>
+                        @foreach($counterparties as $counterparty)
+                            <option value="{{ $counterparty['kpl'] }}" data-name="{{ $counterparty['name'] }}">
+                                {{ $counterparty['name'] }} ({{ $counterparty['kpl'] }})
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+
                 <h3 class="text-lg font-medium mb-4">Настройки разделения</h3>
                 
                 <div id="ranges-container" class="space-y-3 mb-4">
@@ -64,7 +76,7 @@
                 
                 <button type="button" id="split-button" 
                         class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer">
-                    Разделить PDF
+                    Завершить обработку
                 </button>
             </div>
         </div>
