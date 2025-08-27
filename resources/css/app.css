@@ -205,3 +205,29 @@
 #counterparty-results div:active {
     background-color: #e5e7eb;
 }
+
+/* Улучшаем внешний вид диапазонов */
+.space-y-2 > * {
+    margin-bottom: 0.5rem;
+}
+
+.space-y-2 > *:last-child {
+    margin-bottom: 0;
+}
+
+/* Убираем лишние отступы у инпутов */
+.document-name,
+.document-type,
+.system-number,
+.range-input {
+    margin-bottom: 0 !important;
+}
+
+/* Улучшаем визуальное разделение элементов */
+.flex.items-center.space-x-3 > * {
+    margin-right: 0.75rem;
+}
+
+.flex.items-center.space-x-3 > *:last-child {
+    margin-right: 0;
+}

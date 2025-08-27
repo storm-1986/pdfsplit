@@ -351,11 +351,16 @@ class PdfSplitter {
             // Все возможные цветовые классы для удаления
             const colorTypes = ['blue', 'green', 'yellow', 'purple', 'pink', 'indigo',
                             'red', 'teal', 'orange', 'cyan', 'lime', 'amber',
-                            'emerald', 'violet', 'fuchsia', 'rose', 'sky', 'gray']; // Добавили gray
+                            'emerald', 'violet', 'fuchsia', 'rose', 'sky', 'gray'];
             
             const classesToRemove = [];
             colorTypes.forEach(color => {
-                classesToRemove.push(`border-${color}-500`, `shadow-${color}-100`);
+                classesToRemove.push(
+                    `border-${color}-500`, 
+                    `shadow-${color}-100`,
+                    `border-${color}-300`, // Добавляем на случай если используются 300-е оттенки
+                    `bg-${color}-50`       // И фоновые классы
+                );
             });
             
             thumb.classList.remove(...classesToRemove);
@@ -404,8 +409,11 @@ class PdfSplitter {
 
         // Для страниц не входящих в диапазоны оставляем серую рамку
         document.querySelectorAll('.thumbnail-page').forEach(thumb => {
-            if (!thumb.classList.toString().includes('border-') || 
-                thumb.classList.toString().includes('border-gray-200')) {
+            const hasColorBorder = Array.from(thumb.classList).some(cls => 
+                cls.startsWith('border-') && !cls.includes('gray')
+            );
+            
+            if (!hasColorBorder) {
                 thumb.classList.add('border-gray-200');
             }
         });
@@ -536,43 +544,41 @@ class PdfSplitter {
 
         // Создаем новый диапазон
         const rangeElement = document.createElement('div');
-        rangeElement.className = 'space-y-2 bg-white p-4 rounded-lg border';
+        rangeElement.className = `space-y-2 p-4 rounded-lg border-2 ${colorClass}`;
         
         // Генерируем уникальное имя для нового диапазона
         const newName = fileName || `Документ ${docNumber}`;
         
         rangeElement.innerHTML = `
-            <div class="range-container ${colorClass} p-4 rounded-lg border">
-                <div class="flex justify-between items-center mb-2">
-                    <input type="text" 
-                        value="${fileName || `Документ ${docNumber}`}" 
-                        class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Название документа">
-                    <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </button>
-                </div>
-                <div class="flex items-center space-x-3 mb-2">
-                    <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
-                        <option value="14" ${selectedType === '14' ? 'selected' : ''}>Протокол к договору</option>
-                        <option value="15" ${selectedType === '15' ? 'selected' : ''}>Приложение к договору</option>
-                        <option value="16" ${selectedType === '16' ? 'selected' : ''}>Доп.соглашение</option>
-                        <option value="91" ${selectedType === '91' ? 'selected' : ''}>Договор с покупателем</option>
-                        <option value="93" ${selectedType === '93' ? 'selected' : ''}>Письма</option>
-                        <option value="134" ${selectedType === '134' ? 'selected' : ''}>Прочие документы</option>
-                    </select>
-                    <input type="text" class="system-number border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full sm:w-32 md:w-35" placeholder="Системный номер">
-                </div>
-                <div class="flex items-center space-x-3">
-                    <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
-                    <input type="number" min="1" max="${this.totalPages}" value="${from}" 
-                        class="range-input from-input w-16 px-2 py-1 border rounded text-sm">
-                    <span class="text-gray-700 whitespace-nowrap text-sm">—</span>
-                    <input type="number" min="1" max="${this.totalPages}" value="${to}" 
-                        class="range-input to-input w-16 px-2 py-1 border rounded text-sm">
-                </div>
+            <div class="flex justify-between items-center mb-2">
+                <input type="text" 
+                    value="${fileName || `Документ ${docNumber}`}" 
+                    class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Название документа">
+                <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="flex items-center space-x-3 mb-2">
+                <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                    <option value="14" ${selectedType === '14' ? 'selected' : ''}>Протокол к договору</option>
+                    <option value="15" ${selectedType === '15' ? 'selected' : ''}>Приложение к договору</option>
+                    <option value="16" ${selectedType === '16' ? 'selected' : ''}>Доп.соглашение</option>
+                    <option value="91" ${selectedType === '91' ? 'selected' : ''}>Договор с покупателем</option>
+                    <option value="93" ${selectedType === '93' ? 'selected' : ''}>Письма</option>
+                    <option value="134" ${selectedType === '134' ? 'selected' : ''}>Прочие документы</option>
+                </select>
+                <input type="text" class="system-number border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full sm:w-32 md:w-35" placeholder="Системный номер">
+            </div>
+            <div class="flex items-center space-x-3">
+                <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
+                <input type="number" min="1" max="${this.totalPages}" value="${from}" 
+                    class="range-input from-input w-16 px-2 py-1 border rounded text-sm">
+                <span class="text-gray-700 whitespace-nowrap text-sm">—</span>
+                <input type="number" min="1" max="${this.totalPages}" value="${to}" 
+                    class="range-input to-input w-16 px-2 py-1 border rounded text-sm">
             </div>
         `;
 
