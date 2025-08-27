@@ -419,35 +419,41 @@ class PdfSplitter {
         });
     }
 
+    determineDocumentType(fileName) {
+        if (!fileName) return '134'; // По умолчанию "Прочие документы"
+
+        const lowerName = fileName.toLowerCase();
+        
+        // Протокол
+        if (/протокол|protokol|protocol/i.test(lowerName)) {
+            return '14';
+        } 
+        // Приложение
+        else if (/приложение|прил|pril/i.test(lowerName)) {
+            return '15';
+        } 
+        // Доп.соглашение
+        else if (/соглашение|допсоглашение|дс_|доп|dop|доп\.|доп_|dop\.|dop_/i.test(lowerName)) {
+            return '16';
+        } 
+        // Договор
+        else if (/договор|dogovor|contract/i.test(lowerName)) {
+            return '91';
+        } 
+        // Письма
+        else if (/письмо|pismo|letter/i.test(lowerName)) {
+            return '93';
+        }
+        
+        // Если ни одно условие не подошло - прочие документы
+        return '134';
+    }
+
     addRange(from = null, to = null, fileName) {
         const ranges = this.getRanges();
         const docNumber = ranges.length + 1;
-        // Определяем тип документа по имени файла
-        let selectedType = '134'; // По умолчанию "Прочие документы"
-        if (fileName) {
-            const lowerName = fileName.toLowerCase();
-            
-            // Протокол
-            if (/протокол|protokol|protocol/i.test(lowerName)) {
-                selectedType = '14';
-            } 
-            // Приложение
-            else if (/приложение|прил|pril/i.test(lowerName)) {
-                selectedType = '15';
-            } 
-            // Доп.соглашение
-            else if (/соглашение|допсоглашение|дс_|доп|dop|доп\.|доп_|dop\.|dop_/i.test(lowerName)) {
-                selectedType = '16';
-            } 
-            // Договор
-            else if (/договор|dogovor|contract/i.test(lowerName)) {
-                selectedType = '91';
-            } 
-            // Письма
-            else if (/письмо|pismo|letter/i.test(lowerName)) {
-                selectedType = '93';
-            }
-        }
+        const selectedType = this.determineDocumentType(fileName);
+
         const rangeColors = [
             'border-blue-500 bg-blue-50', 
             'border-green-500 bg-green-50',
@@ -552,7 +558,7 @@ class PdfSplitter {
         rangeElement.innerHTML = `
             <div class="flex justify-between items-center mb-2">
                 <input type="text" 
-                    value="${fileName || `Документ ${docNumber}`}" 
+                    value="${newName}" 
                     class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Название документа">
                 <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer">
@@ -609,9 +615,40 @@ class PdfSplitter {
             this.updateThumbnailsHighlight();
         });
 
+        // ДОБАВЛЯЕМ: Обработчик изменения названия документа
+        const documentNameInput = rangeElement.querySelector('.document-name');
+        const documentTypeSelect = rangeElement.querySelector('.document-type');
+        
+        documentNameInput.addEventListener('input', (e) => {
+            this.updateDocumentTypeBasedOnName(e.target.value, documentTypeSelect);
+        });
+
+        documentNameInput.addEventListener('change', (e) => {
+            this.updateDocumentTypeBasedOnName(e.target.value, documentTypeSelect);
+        });
+
         this.rangesContainer.appendChild(rangeElement);
         this.updateRemoveButtonsVisibility();
         this.updateThumbnailsHighlight();
+    }
+
+    updateDocumentTypeBasedOnName(fileName, documentTypeSelect) {
+        if (!fileName || !documentTypeSelect) return;
+        // Используем новый метод для определения типа документа
+        const newType = this.determineDocumentType(fileName);
+        // Устанавливаем выбранный тип
+        documentTypeSelect.value = newType;
+        // Добавляем визуальную обратную связь
+        this.showTypeChangeFeedback(documentTypeSelect);
+    }
+
+    showTypeChangeFeedback(selectElement) {
+        // Временно добавляем класс для визуальной обратной связи
+        selectElement.classList.add('ring-2', 'ring-blue-500');
+        
+        setTimeout(() => {
+            selectElement.classList.remove('ring-2', 'ring-blue-500');
+        }, 1000);
     }
 
     // Новый метод для корректировки последнего диапазона после удаления
