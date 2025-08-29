@@ -15,7 +15,7 @@ use Hfig\MAPI\OLE\Pear\DocumentFactory;
 
 class PdfSplitterController extends Controller
 {
-    private $bearerToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJQbGF0Zm9ybSBmb3IgZGV2ZWxvcG1lbnQiLCJ1c2VybmFtZSI6Indkb2MiLCJpYXQiOjE3NTYyMTA2NjksImlzcyI6IlNwcmluZy1Ub29sLVNlcnZlciIsImV4cCI6MTc1NjI5NzA2OX0.XaGxotlJmpejJ5WCSmWR7W_DGVicubeDbB34emrv8Sg';
+    private $bearerToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJQbGF0Zm9ybSBmb3IgZGV2ZWxvcG1lbnQiLCJ1c2VybmFtZSI6Indkb2MiLCJpYXQiOjE3NTYzNjg3ODgsImlzcyI6IlNwcmluZy1Ub29sLVNlcnZlciIsImV4cCI6MTc1NjQ1NTE4OH0.WrL0qYp1mnBW7gyi7mKgw6_gEh33JKXT4vWuVpwosWU';
 
     public function __construct()
     {
@@ -339,21 +339,63 @@ class PdfSplitterController extends Controller
         
         Storage::disk('public')->makeDirectory($thumbDir);
         
-        for ($i = 1; $i <= $pdf->getNumberOfPages(); $i++) {
+        // Устанавливаем оптимизированные параметры для ускорения
+        $pdf->setCompressionQuality(75); // Оптимальное качество для превью
+        $pdf->setResolution(96); // Достаточное разрешение для просмотра в браузере
+        
+        $pageCount = $pdf->getNumberOfPages();
+        
+        for ($i = 1; $i <= $pageCount; $i++) {
             $imageName = "page_{$i}.jpg";
             $storagePath = "{$thumbDir}/{$imageName}";
+            $fullPath = storage_path("app/public/{$storagePath}");
             
-            $pdf->setPage($i)
-                ->saveImage(storage_path("app/public/{$storagePath}"));
-            
-            $pages[] = [
-                'number' => $i,
-                'image_url' => asset("storage/{$storagePath}"),
-                'storage_path' => $storagePath
-            ];
+            try {
+                // Генерируем превью для каждой страницы
+                $pdf->setPage($i)->saveImage($fullPath);
+                
+                // Оптимизируем сохраненное изображение (уменьшаем размер без потери визуального качества)
+                if (file_exists($fullPath)) {
+                    $this->optimizeThumbnail($fullPath);
+                }
+                
+                $pages[] = [
+                    'number' => $i,
+                    'image_url' => asset("storage/{$storagePath}"),
+                    'storage_path' => $storagePath
+                ];
+            } catch (\Exception $e) {
+                Log::error("Failed to generate thumbnail for page {$i}: " . $e->getMessage());
+                // Продолжаем генерировать превью для остальных страниц
+                continue;
+            }
         }
         
         return $pages;
+    }
+
+    private function optimizeThumbnail($imagePath)
+    {
+        try {
+            $image = new Imagick($imagePath);
+            
+            // Оптимизируем только большие изображения
+            if ($image->getImageWidth() > 1200) {
+                $image->resizeImage(1200, 0, Imagick::FILTER_LANCZOS, 1);
+            }
+            
+            // Устанавливаем оптимальные параметры сжатия
+            $image->setImageCompression(Imagick::COMPRESSION_JPEG);
+            $image->setImageCompressionQuality(75);
+            $image->setInterlaceScheme(Imagick::INTERLACE_PLANE); // Прогрессивная загрузка
+            $image->stripImage(); // Удаляем метаданные для уменьшения размера
+            
+            $image->writeImage($imagePath);
+            $image->clear();
+        } catch (\Exception $e) {
+            Log::error("Thumbnail optimization failed: " . $e->getMessage());
+            // Не прерываем выполнение если оптимизация не удалась
+        }
     }
 
     public function downloadRanges(Request $request)
@@ -377,47 +419,28 @@ class PdfSplitterController extends Controller
                 throw new \Exception("Не удалось создать ZIP-архив");
             }
 
-            // Собираем все страницы всех документов
-            $allPages = [];
-            foreach ($validated['documents'] as $document) {
-                $pdf = new Pdf(storage_path('app/' . $document['pdf_path']));
-                $pagesCount = $pdf->getNumberOfPages();
-                $allPages = array_merge($allPages, range(1, $pagesCount));
-            }
-
-            // Обрабатываем каждый диапазон
+            // Используем pdftk для быстрого извлечения страниц
             foreach ($validated['ranges'] as $rangeData) {
-                $pages = $this->parseRange($rangeData['range'], count($allPages));
+                $pages = $this->parseRange($rangeData['range'], $this->getTotalPages($validated['documents']));
                 $fileName = $this->sanitizeFilename($rangeData['name']) . '.pdf';
                 $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
 
-                $imagick = new Imagick();
-                $currentPage = 0;
-                
-                foreach ($validated['documents'] as $document) {
-                    $pdf = new Pdf(storage_path('app/' . $document['pdf_path']));
-                    $pagesCount = $pdf->getNumberOfPages();
-                    
-                    foreach (range(1, $pagesCount) as $pageNum) {
-                        $currentPage++;
-                        if (in_array($currentPage, $pages)) {
-                            $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
-                            $pdf->setPage($pageNum)->saveImage($tempImage);
-                            $pageImage = new Imagick($tempImage);
-                            $imagick->addImage($pageImage);
-                            unlink($tempImage);
-                        }
-                    }
+                if ($this->isPdftkAvailable()) {
+                    // Быстрый метод с pdftk
+                    Log::info('Using PDFTK for fast PDF processing');
+                    $this->extractPagesWithPdftk($validated['documents'], $pages, $tempPdfPath);
+                } else {
+                    // Резервный медленный метод
+                    Log::warning('PDFTK not available, using fallback Imagick method');
+                    $this->extractPagesWithImagick($validated['documents'], $pages, $tempPdfPath);
                 }
-
-                $imagick->setImageFormat('pdf');
-                $imagick->writeImages($tempPdfPath, true);
-                $imagick->clear();
-
+                
                 $zip->addFile($tempPdfPath, $fileName);
             }
 
             $zip->close();
+            
+            // Очищаем временные файлы
             array_map('unlink', glob(storage_path('app/temp_split/*.pdf')));
 
             return response()->json([
@@ -436,6 +459,162 @@ class PdfSplitterController extends Controller
                 'message' => $e->getMessage()
             ], 500);
         }
+    }
+
+    private function isPdftkAvailable()
+    {
+        // Определяем ОС и выбираем соответствующую команду
+        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        $command = $isWindows ? 'where pdftk' : 'which pdftk';
+        
+        exec($command, $output, $returnCode);
+        return $returnCode === 0;
+    }
+
+    private function getTotalPages($documents)
+    {
+        $totalPages = 0;
+        foreach ($documents as $document) {
+            try {
+                $pdf = new Pdf(storage_path('app/' . $document['pdf_path']));
+                $totalPages += $pdf->getNumberOfPages();
+            } catch (\Exception $e) {
+                Log::error("Failed to get page count for document: " . $e->getMessage());
+            }
+        }
+        return $totalPages;
+    }
+
+    private function extractPagesWithPdftk($documents, $targetPages, $outputPath)
+    {
+        $pageCounter = 0;
+        $pdfFiles = [];
+        $tempFiles = [];
+
+        try {
+            foreach ($documents as $document) {
+                $pdfPath = storage_path('app/' . $document['pdf_path']);
+                $pdf = new Pdf($pdfPath);
+                $pageCount = $pdf->getNumberOfPages();
+                
+                $documentPages = [];
+                for ($i = 1; $i <= $pageCount; $i++) {
+                    $pageCounter++;
+                    if (in_array($pageCounter, $targetPages)) {
+                        $documentPages[] = $i;
+                    }
+                }
+                
+                if (!empty($documentPages)) {
+                    $tempFile = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
+                    $this->extractDocumentPages($pdfPath, $documentPages, $tempFile);
+                    $pdfFiles[] = $tempFile;
+                    $tempFiles[] = $tempFile;
+                }
+            }
+
+            if (count($pdfFiles) > 1) {
+                $this->mergePdfFiles($pdfFiles, $outputPath);
+            } else if (count($pdfFiles) === 1) {
+                copy($pdfFiles[0], $outputPath);
+            }
+
+            foreach ($tempFiles as $tempFile) {
+                if (file_exists($tempFile)) {
+                    unlink($tempFile);
+                }
+            }
+
+        } catch (\Exception $e) {
+            foreach ($tempFiles as $tempFile) {
+                if (file_exists($tempFile)) {
+                    @unlink($tempFile);
+                }
+            }
+            throw $e;
+        }
+    }
+
+    private function extractDocumentPages($pdfPath, $pages, $outputPath)
+    {
+        $pagesString = implode(' ', $pages);
+        
+        // Экранируем пути для Windows
+        $pdfPathEscaped = $this->escapePath($pdfPath);
+        $outputPathEscaped = $this->escapePath($outputPath);
+        
+        $command = "pdftk {$pdfPathEscaped} cat {$pagesString} output {$outputPathEscaped} 2>&1";
+        
+        exec($command, $output, $returnCode);
+        
+        if ($returnCode !== 0 || !file_exists($outputPath)) {
+            Log::error("PDFTK command failed", [
+                'command' => $command,
+                'output' => $output,
+                'return_code' => $returnCode
+            ]);
+            throw new \Exception("Failed to extract pages using pdftk: " . implode("\n", $output));
+        }
+    }
+
+    private function escapePath($path)
+    {
+        // Экранируем пробелы и специальные символы для командной строки
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            // Для Windows: двойные кавычки
+            return '"' . addcslashes($path, '"') . '"';
+        } else {
+            // Для Linux: одинарные кавычки
+            return "'" . addcslashes($path, "'") . "'";
+        }
+    }
+
+    private function mergePdfFiles($pdfFiles, $outputPath)
+    {
+        $filesString = implode(' ', array_map(function($file) {
+            return "\"{$file}\"";
+        }, $pdfFiles));
+        
+        $command = "pdftk {$filesString} cat output \"{$outputPath}\" 2>/dev/null";
+        
+        exec($command, $output, $returnCode);
+        
+        if ($returnCode !== 0) {
+            throw new \Exception("Failed to merge PDF files");
+        }
+    }
+
+    private function extractPagesWithImagick($documents, $targetPages, $outputPath)
+    {
+        // Старый медленный метод как fallback
+        $imagick = new Imagick();
+        $pageCounter = 0;
+        
+        foreach ($documents as $document) {
+            $pdfPath = storage_path('app/' . $document['pdf_path']);
+            $pdf = new Pdf($pdfPath);
+            $pagesCount = $pdf->getNumberOfPages();
+            
+            for ($pageNum = 1; $pageNum <= $pagesCount; $pageNum++) {
+                $pageCounter++;
+                if (in_array($pageCounter, $targetPages)) {
+                    $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
+                    
+                    // Устанавливаем оптимизированные параметры
+                    $pdf->setCompressionQuality(80);
+                    $pdf->setResolution(150);
+                    $pdf->setPage($pageNum)->saveImage($tempImage);
+                    
+                    $pageImage = new Imagick($tempImage);
+                    $imagick->addImage($pageImage);
+                    unlink($tempImage);
+                }
+            }
+        }
+
+        $imagick->setImageFormat('pdf');
+        $imagick->writeImages($outputPath, true);
+        $imagick->clear();
     }
 
     private function sanitizeFilename($name)
