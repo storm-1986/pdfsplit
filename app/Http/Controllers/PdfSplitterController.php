@@ -537,50 +537,78 @@ class PdfSplitterController extends Controller
 
     private function extractDocumentPages($pdfPath, $pages, $outputPath)
     {
-        $pagesString = implode(' ', $pages);
-        
-        // Экранируем пути для Windows
-        $pdfPathEscaped = $this->escapePath($pdfPath);
-        $outputPathEscaped = $this->escapePath($outputPath);
-        
-        $command = "pdftk {$pdfPathEscaped} cat {$pagesString} output {$outputPathEscaped} 2>&1";
-        
-        exec($command, $output, $returnCode);
-        
-        if ($returnCode !== 0 || !file_exists($outputPath)) {
-            Log::error("PDFTK command failed", [
-                'command' => $command,
-                'output' => $output,
-                'return_code' => $returnCode
+        try {
+            $pagesString = implode(' ', $pages);
+            
+            // Создаем временные файлы с ASCII именами
+            $tempInputPath = storage_path('app/temp_split/input_' . Str::random(16) . '.pdf');
+            $tempOutputPath = storage_path('app/temp_split/output_' . Str::random(16) . '.pdf');
+            
+            // Копируем исходный файл
+            if (!copy($pdfPath, $tempInputPath)) {
+                throw new \Exception("Failed to create temporary input file");
+            }
+            
+            $command = "pdftk " . escapeshellarg($tempInputPath) . " cat {$pagesString} output " . escapeshellarg($tempOutputPath) . " 2>&1";
+            
+            exec($command, $output, $returnCode);
+            
+            // Проверяем результат
+            if ($returnCode === 0 && file_exists($tempOutputPath)) {
+                if (!copy($tempOutputPath, $outputPath)) {
+                    throw new \Exception("Failed to copy result to output path");
+                }
+            } else {
+                throw new \Exception("PDFTK failed: " . implode("\n", $output));
+            }
+            
+            return true;
+            
+        } catch (\Exception $e) {
+            Log::error("PDFTK extraction failed", [
+                'pdf_path' => $pdfPath,
+                'pages' => $pages,
+                'error' => $e->getMessage()
             ]);
-            throw new \Exception("Failed to extract pages using pdftk: " . implode("\n", $output));
-        }
-    }
-
-    private function escapePath($path)
-    {
-        // Экранируем пробелы и специальные символы для командной строки
-        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
-            // Для Windows: двойные кавычки
-            return '"' . addcslashes($path, '"') . '"';
-        } else {
-            // Для Linux: одинарные кавычки
-            return "'" . addcslashes($path, "'") . "'";
+            throw $e;
+            
+        } finally {
+            // Всегда очищаем временные файлы
+            if (isset($tempInputPath) && file_exists($tempInputPath)) {
+                @unlink($tempInputPath);
+            }
+            if (isset($tempOutputPath) && file_exists($tempOutputPath)) {
+                @unlink($tempOutputPath);
+            }
         }
     }
 
     private function mergePdfFiles($pdfFiles, $outputPath)
     {
+        // Создаем временный выходной файл
+        $tempOutputPath = storage_path('app/temp_split/' . Str::random(20) . '.pdf');
+        
+        // Экранируем все пути
         $filesString = implode(' ', array_map(function($file) {
-            return "\"{$file}\"";
+            return escapeshellarg($file);
         }, $pdfFiles));
         
-        $command = "pdftk {$filesString} cat output \"{$outputPath}\" 2>/dev/null";
+        $command = "pdftk {$filesString} cat output " . escapeshellarg($tempOutputPath) . " 2>&1";
         
         exec($command, $output, $returnCode);
         
+        // Копируем результат
+        if ($returnCode === 0 && file_exists($tempOutputPath)) {
+            copy($tempOutputPath, $outputPath);
+        }
+        
+        // Очищаем временный файл
+        if (file_exists($tempOutputPath)) {
+            unlink($tempOutputPath);
+        }
+        
         if ($returnCode !== 0) {
-            throw new \Exception("Failed to merge PDF files");
+            throw new \Exception("Failed to merge PDF files: " . implode("\n", $output));
         }
     }
 
