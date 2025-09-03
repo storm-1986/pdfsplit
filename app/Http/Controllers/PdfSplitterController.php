@@ -34,19 +34,14 @@ class PdfSplitterController extends Controller
         }
     }
 
-    public function showUploadForm()
+    public function showUploadForm(Request $request)
     {
-        try {
-            $counterparties = $this->getCounterparties();
-            return view('index', compact('counterparties'));
-        } catch (\Exception $e) {
-            Log::error('Error loading counterparties: ' . $e->getMessage());
-            $counterparties = [];
-            return view('index', compact('counterparties'));
-        }
+        $ipAddress = $request->ip();
+        $counterparties = $this->getCounterparties($ipAddress);
+        return view('index', compact('counterparties'));
     }
     
-    private function getCounterparties()
+    private function getCounterparties($ipAddress)
     {
         try {
             $response = Http::withOptions([
@@ -60,17 +55,18 @@ class PdfSplitterController extends Controller
                 return $response->json();
             }
             
-            Log::error('Не удалось загрузить контрагентов: ' . $response->status());
+            Log::error($ipAddress . ' Не удалось загрузить контрагентов: ' . $response->status());
             return [];
 
         } catch (\Exception $e) {
-            Log::error('Ошибка при загрузке контрагентов: ' . $e->getMessage());
+            Log::error($ipAddress . ' Ошибка при загрузке контрагентов: ' . $e->getMessage());
             return [];
         }
     }
 
     public function uploadAndSplit(Request $request)
     {
+        $ipAddress = $request->ip();
         try {
             // Правильно получаем файлы (массив или одиночный файл)
             $files = $request->allFiles()['pdf'] ?? [];
@@ -110,7 +106,7 @@ class PdfSplitterController extends Controller
                     $tempMsgPath = storage_path('app/temp_msg/' . Str::random(20) . '.msg');
                     file_put_contents($tempMsgPath, file_get_contents($file->getRealPath()));
 
-                    $documents = $this->extractPdfFromBinary($tempMsgPath, $sessionId, $tempDir, $documentIndex);
+                    $documents = $this->extractPdfFromBinary($tempMsgPath, $sessionId, $tempDir, $documentIndex, $ipAddress);
                     @unlink($tempMsgPath);
 
                     if (!empty($documents)) {
@@ -142,7 +138,7 @@ class PdfSplitterController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Upload failed', [
+            Log::error($ipAddress . ' Upload failed ', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -153,32 +149,32 @@ class PdfSplitterController extends Controller
         }
     }
 
-    protected function extractPdfFromBinary($filePath, $sessionId, $tempDir, &$documentIndex)
+    protected function extractPdfFromBinary($filePath, $sessionId, $tempDir, &$documentIndex, $ipAddress)
     {
         $documents = [];
         
         try {
             // Пробуем MAPI-парсер для Outlook MSG
-            $documents = $this->extractWithMapi($filePath, $sessionId, $tempDir, $documentIndex);
+            $documents = $this->extractWithMapi($filePath, $sessionId, $tempDir, $documentIndex, $ipAddress);
             
             if (!empty($documents)) {
                 return $documents;
             }
             
             // Если MAPI не сработал, используем бинарный fallback
-            Log::debug('MAPI parser found no attachments, using binary fallback');
-            return $this->extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, $documentIndex);
+            Log::debug($ipAddress . ' MAPI parser found no attachments, using binary fallback');
+            return $this->extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, $documentIndex, $ipAddress);
             
         } catch (\Exception $e) {
-            Log::error('MAPI parser failed, using binary fallback', [
+            Log::error($ipAddress . ' MAPI parser failed, using binary fallback', [
                 'error' => $e->getMessage(),
                 'file' => $filePath
             ]);
-            return $this->extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, $documentIndex);
+            return $this->extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, $documentIndex, $ipAddress);
         }
     }
 
-    protected function extractWithMapi($filePath, $sessionId, $tempDir, &$documentIndex)
+    protected function extractWithMapi($filePath, $sessionId, $tempDir, &$documentIndex, $ipAddress)
     {
         $documents = [];
         
@@ -194,7 +190,7 @@ class PdfSplitterController extends Controller
             // Получаем вложения
             $attachments = $message->getAttachments();
             
-            Log::debug('MAPI found attachments: ' . count($attachments));
+            Log::debug($ipAddress . ' MAPI found attachments: ' . count($attachments));
             
             foreach ($attachments as $attachment) {
                 try {
@@ -215,11 +211,11 @@ class PdfSplitterController extends Controller
                     // Проверяем что это PDF по расширению
                     $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
                     if ($extension !== 'pdf') {
-                        Log::debug('Skipping non-PDF attachment: ' . $filename);
+                        Log::debug($ipAddress . ' Skipping non-PDF attachment: ' . $filename);
                         continue;
                     }
                     
-                    Log::debug('Processing PDF attachment: ' . $filename);
+                    Log::debug($ipAddress . ' Processing PDF attachment: ' . $filename);
                     
                     // Получаем содержимое вложения через свойство
                     $content = $props['attach_data'] ?? $props['attach_data_bin'] ?? null;
@@ -231,7 +227,7 @@ class PdfSplitterController extends Controller
                         Storage::put($pdfPath, $content);
                         
                         try {
-                            $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex);
+                            $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $ipAddress, $documentIndex);
                             
                             $documents[] = [
                                 'original_name' => $safeName,
@@ -242,18 +238,18 @@ class PdfSplitterController extends Controller
                             
                             $documentIndex++;
                             
-                            Log::info('MAPI successfully extracted PDF: ' . $safeName);
+                            Log::info($ipAddress . ' MAPI successfully extracted PDF: ' . $safeName);
                             
                         } catch (\Exception $e) {
-                            Log::error('Failed to process PDF: ' . $safeName, ['error' => $e->getMessage()]);
+                            Log::error($ipAddress . ' Failed to process PDF: ' . $safeName, ['error' => $e->getMessage()]);
                             Storage::delete($pdfPath);
                         }
                     } else {
-                        Log::debug('Attachment content is not PDF or empty: ' . $filename);
+                        Log::debug($ipAddress . ' Attachment content is not PDF or empty: ' . $filename);
                     }
                     
                 } catch (\Exception $e) {
-                    Log::warning('Failed to process MAPI attachment', [
+                    Log::warning($ipAddress . ' Failed to process MAPI attachment', [
                         'error' => $e->getMessage(),
                         'filename' => $filename ?? 'unknown'
                     ]);
@@ -262,7 +258,7 @@ class PdfSplitterController extends Controller
             }
             
         } catch (\Exception $e) {
-            Log::error('MAPI parsing failed', [
+            Log::error($ipAddress . ' MAPI parsing failed', [
                 'error' => $e->getMessage(),
                 'file' => $filePath,
                 'trace' => $e->getTraceAsString()
@@ -273,7 +269,7 @@ class PdfSplitterController extends Controller
         return $documents;
     }
 
-    protected function extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, &$documentIndex)
+    protected function extractPdfFromBinaryFallback($filePath, $sessionId, $tempDir, &$documentIndex, $ipAddress)
     {
         $documents = [];
         $content = file_get_contents($filePath);
@@ -304,7 +300,7 @@ class PdfSplitterController extends Controller
                 Storage::put($pdfPath, $pdfContent);
                 
                 try {
-                    $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex);
+                    $pages = $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $ipAddress, $documentIndex);
                     
                     $documents[] = [
                         'original_name' => $safeName,
@@ -326,7 +322,7 @@ class PdfSplitterController extends Controller
         return $documents;
     }
 
-    protected function generateThumbnails($pdfPath, $sessionId, $documentIndex = null)
+    protected function generateThumbnails($pdfPath, $sessionId, $ipAddress, $documentIndex = null)
     {
         $pdf = new Pdf($pdfPath);
         $pages = [];
@@ -341,7 +337,7 @@ class PdfSplitterController extends Controller
         
         // Устанавливаем оптимизированные параметры для ускорения
         $pdf->setCompressionQuality(75); // Оптимальное качество для превью
-        $pdf->setResolution(96); // Достаточное разрешение для просмотра в браузере
+        $pdf->setResolution(120);
         
         $pageCount = $pdf->getNumberOfPages();
         
@@ -356,7 +352,7 @@ class PdfSplitterController extends Controller
                 
                 // Оптимизируем сохраненное изображение (уменьшаем размер без потери визуального качества)
                 if (file_exists($fullPath)) {
-                    $this->optimizeThumbnail($fullPath);
+                    $this->optimizeThumbnail($fullPath, $ipAddress);
                 }
                 
                 $pages[] = [
@@ -365,7 +361,7 @@ class PdfSplitterController extends Controller
                     'storage_path' => $storagePath
                 ];
             } catch (\Exception $e) {
-                Log::error("Failed to generate thumbnail for page {$i}: " . $e->getMessage());
+                Log::error($ipAddress . " Failed to generate thumbnail for page {$i}: " . $e->getMessage());
                 // Продолжаем генерировать превью для остальных страниц
                 continue;
             }
@@ -374,7 +370,7 @@ class PdfSplitterController extends Controller
         return $pages;
     }
 
-    private function optimizeThumbnail($imagePath)
+    private function optimizeThumbnail($imagePath, $ipAddress)
     {
         try {
             $image = new Imagick($imagePath);
@@ -393,13 +389,14 @@ class PdfSplitterController extends Controller
             $image->writeImage($imagePath);
             $image->clear();
         } catch (\Exception $e) {
-            Log::error("Thumbnail optimization failed: " . $e->getMessage());
+            Log::error($ipAddress . " Thumbnail optimization failed: " . $e->getMessage());
             // Не прерываем выполнение если оптимизация не удалась
         }
     }
 
     public function downloadRanges(Request $request)
     {
+        $ipAddress = $request->ip();
         $validated = $request->validate([
             'documents' => 'required|array',
             'documents.*.pdf_path' => 'required|string',
@@ -421,17 +418,17 @@ class PdfSplitterController extends Controller
 
             // Используем pdftk для быстрого извлечения страниц
             foreach ($validated['ranges'] as $rangeData) {
-                $pages = $this->parseRange($rangeData['range'], $this->getTotalPages($validated['documents']));
+                $pages = $this->parseRange($rangeData['range'], $this->getTotalPages($validated['documents']), $ipAddress);
                 $fileName = $this->sanitizeFilename($rangeData['name']) . '.pdf';
                 $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
 
-                if ($this->isPdftkAvailable()) {
+                if ($this->isPdftkAvailable($ipAddress)) {
                     // Быстрый метод с pdftk
-                    Log::info('Using PDFTK for fast PDF processing');
+                    Log::info($ipAddress . ' Using PDFTK for fast PDF processing');
                     $this->extractPagesWithPdftk($validated['documents'], $pages, $tempPdfPath);
                 } else {
                     // Резервный медленный метод
-                    Log::warning('PDFTK not available, using fallback Imagick method');
+                    Log::warning($ipAddress . 'PDFTK not available, using fallback Imagick method');
                     $this->extractPagesWithImagick($validated['documents'], $pages, $tempPdfPath);
                 }
                 
@@ -450,7 +447,7 @@ class PdfSplitterController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error("Download ranges error", [
+            Log::error($ipAddress . "Download ranges error", [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
@@ -461,7 +458,7 @@ class PdfSplitterController extends Controller
         }
     }
 
-    private function isPdftkAvailable()
+    private function isPdftkAvailable($ipAddress)
     {
         // Определяем ОС и выбираем соответствующую команду
         $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
@@ -471,7 +468,7 @@ class PdfSplitterController extends Controller
         return $returnCode === 0;
     }
 
-    private function getTotalPages($documents)
+    private function getTotalPages($documents, $ipAddress)
     {
         $totalPages = 0;
         foreach ($documents as $document) {
@@ -479,7 +476,7 @@ class PdfSplitterController extends Controller
                 $pdf = new Pdf(storage_path('app/' . $document['pdf_path']));
                 $totalPages += $pdf->getNumberOfPages();
             } catch (\Exception $e) {
-                Log::error("Failed to get page count for document: " . $e->getMessage());
+                Log::error($ipAddress . " Failed to get page count for document: " . $e->getMessage());
             }
         }
         return $totalPages;
