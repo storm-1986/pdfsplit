@@ -358,13 +358,17 @@ class PdfSplitter {
                 classesToRemove.push(
                     `border-${color}-500`, 
                     `shadow-${color}-100`,
-                    `border-${color}-300`, // Добавляем на случай если используются 300-е оттенки
-                    `bg-${color}-50`       // И фоновые классы
+                    `border-${color}-300`,
+                    `bg-${color}-50`
                 );
             });
             
             thumb.classList.remove(...classesToRemove);
-            // Убираем border-gray-200 из базового класса
+            
+            // Убираем перечеркивание
+            thumb.classList.remove('opacity-60', 'line-through');
+            
+            // Базовые классы
             thumb.className = 'thumbnail-page border-2 rounded overflow-hidden hover:shadow-md transition';
             
             // Добавляем серую рамку по умолчанию
@@ -385,15 +389,23 @@ class PdfSplitter {
             'emerald', 'violet', 'fuchsia', 'rose', 'sky'
         ];
         
+        // Собираем все страницы, которые входят в диапазоны
+        const pagesInRanges = new Set();
+        
         ranges.forEach((range, rangeIndex) => {
             const colorClass = colors[rangeIndex % colors.length];
             
             for (let page = range.from; page <= range.to; page++) {
+                pagesInRanges.add(page);
+                
                 const thumb = document.querySelector(`.thumbnail-page[data-page-number="${page}"]`);
                 if (thumb) {
                     // Убираем серую рамку и добавляем цветную
                     thumb.classList.remove('border-gray-200');
                     thumb.classList.add(`border-${colorClass}-500`, `shadow-${colorClass}-100`);
+                    
+                    // Убираем перечеркивание для страниц в диапазонах
+                    thumb.classList.remove('opacity-60', 'line-through');
                     
                     // Добавляем бейдж с номером диапазона
                     const badgeContainer = thumb.querySelector('.bg-gray-50');
@@ -407,14 +419,31 @@ class PdfSplitter {
             }
         });
 
-        // Для страниц не входящих в диапазоны оставляем серую рамку
+        // Для страниц НЕ входящих в диапазоны - добавляем перечеркивание
         document.querySelectorAll('.thumbnail-page').forEach(thumb => {
-            const hasColorBorder = Array.from(thumb.classList).some(cls => 
-                cls.startsWith('border-') && !cls.includes('gray')
-            );
+            const pageNumber = parseInt(thumb.getAttribute('data-page-number'));
             
-            if (!hasColorBorder) {
-                thumb.classList.add('border-gray-200');
+            if (!pagesInRanges.has(pageNumber)) {
+                // Добавляем визуальное перечеркивание
+                thumb.classList.add('opacity-80', 'line-through', 'border-gray-300');
+                
+                // Убираем цветную подсветку если была
+                thumb.classList.remove('border-gray-200');
+                
+                // Добавляем иконку перечеркивания или текст
+                const badgeContainer = thumb.querySelector('.bg-gray-50');
+                if (badgeContainer) {
+                    // Удаляем старые бейджи исключенных страниц
+                    const excludeBadge = badgeContainer.querySelector('.excluded-badge');
+                    if (excludeBadge) {
+                        excludeBadge.remove();
+                    }
+                    
+                    const badge = document.createElement('span');
+                    badge.className = 'excluded-badge text-xs px-2 py-1 rounded ml-2 bg-gray-200 text-gray-600 font-medium';
+                    badge.textContent = 'Искл.';
+                    badgeContainer.appendChild(badge);
+                }
             }
         });
     }

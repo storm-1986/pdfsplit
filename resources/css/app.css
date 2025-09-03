@@ -248,3 +248,35 @@
 .document-type.changed {
     animation: typeChangePulse 1s ease-in-out;
 }
+
+/* Стили для исключенных страниц */
+.thumbnail-page.line-through {
+    position: relative;
+}
+
+.thumbnail-page.line-through::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        45deg,
+        transparent 0%,
+        transparent 44%,
+        rgba(239, 68, 68, 0.3) 45%,
+        rgba(239, 68, 68, 0.3) 55%,
+        transparent 56%,
+        transparent 100%
+    );
+    pointer-events: none;
+}
+
+.thumbnail-page.opacity-60 {
+    opacity: 0.7;
+}
+
+.thumbnail-page.line-through .bg-gray-50 {
+    background-color: rgba(249, 250, 251, 0.8) !important;
+}
