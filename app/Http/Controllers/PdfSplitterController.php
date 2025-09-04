@@ -418,7 +418,7 @@ class PdfSplitterController extends Controller
 
             // Используем pdftk для быстрого извлечения страниц
             foreach ($validated['ranges'] as $rangeData) {
-                $pages = $this->parseRange($rangeData['range'], $this->getTotalPages($validated['documents']), $ipAddress);
+                $pages = $this->parseRange($rangeData['range'], $this->getTotalPages($validated['documents'], $ipAddress));
                 $fileName = $this->sanitizeFilename($rangeData['name']) . '.pdf';
                 $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
 
