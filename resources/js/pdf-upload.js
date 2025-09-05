@@ -85,6 +85,16 @@ class PdfSplitter {
             const files = e.dataTransfer.files;
             
             if (files.length > 0) {
+                // Очищаем предыдущие ошибки
+                this.clearFileError();
+                // Проверяем типы файлов перед установкой
+                const invalidFiles = this.validateFileTypes(files);
+
+                if (invalidFiles.length > 0) {
+                    this.showFileError(`Вы пытаетесь загрузить недопустимый тип файла: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
+                    return; // Не добавляем файлы
+                }
+
                 // Создаем искусственное событие change для fileInput
                 this.fileInput.files = files;
                 const event = new Event('change', { bubbles: true });
@@ -96,12 +106,34 @@ class PdfSplitter {
         });
     }
 
+    validateFileTypes(files) {
+        const allowedExtensions = ['pdf', 'msg'];
+        
+        return Array.from(files).filter(file => {
+            const extension = file.name.toLowerCase().split('.').pop();
+            return !allowedExtensions.includes(extension);
+        });
+    }
+
     handleFileChange(e) {
         const files = e.target.files;
+
+        // Очищаем ошибку при новом выборе файлов
+        this.clearFileError();
+        
         if (files.length > 0) {
+            // Проверяем типы файлов
+            const invalidFiles = this.validateFileTypes(files);
+
+            if (invalidFiles.length > 0) {
+                this.showFileError(`Вы пытаетесь загрузить недопустимый тип файла: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
+                this.fileInput.value = ''; // Очищаем input
+                this.uploadButton.disabled = true;
+                return;
+            }
+
             this.showSelectedFiles(files);
             this.uploadButton.disabled = false;
-            this.uploadForm.querySelector('.upload-error')?.remove();
         } else {
             this.uploadButton.disabled = true;
         }
@@ -169,9 +201,20 @@ class PdfSplitter {
     async handleSubmit(e) {
         e.preventDefault();
         const files = Array.from(this.fileInput.files);
+
+        // Очищаем предыдущие ошибки
+        this.clearFileError();
         
         if (files.length === 0) {
             this.showFileError('Пожалуйста, выберите файлы');
+            return;
+        }
+
+        // Дополнительная проверка перед отправкой
+        const invalidFiles = this.validateFileTypes(files);
+
+        if (invalidFiles.length > 0) {
+            this.showFileError(`Недопустимые типы файлов: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
             return;
         }
 
@@ -255,10 +298,15 @@ class PdfSplitter {
         const oldError = this.uploadForm.querySelector('.upload-error');
         if (oldError) oldError.remove();
         
-        // Создаем новое сообщение с дополнительным отступом
+        // Создаем новое сообщение об ошибке
         const errorElement = document.createElement('div');
-        errorElement.className = 'upload-error text-red-500 text-sm mt-2 mb-3 text-center'; // Добавили mb-3
-        errorElement.textContent = message;
+        errorElement.className = 'upload-error text-red-500 text-sm mt-2 mb-3 text-center';
+        errorElement.innerHTML = `
+            <div class="flex items-center justify-center">
+                <span class="mr-2">❌</span>
+                <span>${message}</span>
+            </div>
+        `;
         
         // Вставляем после области загрузки
         const uploadArea = this.uploadForm.querySelector('.upload-area');
@@ -266,10 +314,17 @@ class PdfSplitter {
         
         // Подсвечиваем область загрузки
         uploadArea.classList.add('border-red-500');
-        setTimeout(() => {
+    }
+
+    // Добавим метод для очистки ошибок
+    clearFileError() {
+        const oldError = this.uploadForm.querySelector('.upload-error');
+        if (oldError) oldError.remove();
+        
+        const uploadArea = this.uploadForm.querySelector('.upload-area');
+        if (uploadArea) {
             uploadArea.classList.remove('border-red-500');
-            errorElement.remove();
-        }, 3000);
+        }
     }
 
     showPreview() {
@@ -896,6 +951,7 @@ class PdfSplitter {
         if (!keepFiles) {
             this.fileInput.value = '';
             this.hideFileInfo();
+            this.clearFileError(); // Очищаем ошибки
         }
         
         // Сбрасываем состояние кнопки загрузки
