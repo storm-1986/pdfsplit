@@ -629,31 +629,9 @@ class PdfSplitter {
                 } 
                 // 3. Если дыр нет - делим самый большой диапазон
                 else {
-                    // Находим самый большой диапазон
-                    let largestRange = null;
-                    let largestSize = 0;
-                    
-                    for (const range of ranges) {
-                        const size = range.to - range.from;
-                        if (size > largestSize) {
-                            largestSize = size;
-                            largestRange = range;
-                        }
-                    }
-                    
-                    if (largestRange) {
-                        const rangeElement = Array.from(this.rangesContainer.children)
-                            .find(el => parseInt(el.querySelector('.from-input').value) === largestRange.from);
-                        
-                        if (rangeElement) {
-                            const toInput = rangeElement.querySelector('.to-input');
-                            const newEnd = largestRange.from + Math.floor(largestSize / 2);
-                            toInput.value = newEnd;
-                            
-                            from = newEnd + 1;
-                            to = largestRange.to;
-                        }
-                    }
+                    this.showNotification('Нет свободных страниц для добавления диапазона. Удалите или измените существующие диапазоны.', 'warning');
+                    if (!isInitial) this.rangeCounter--; // Откатываем счетчик
+                    return;
                 }
             } else {
                 // Первый диапазон
@@ -753,6 +731,35 @@ class PdfSplitter {
         this.sortRangesByPages(); // Сортируем по страницам
         this.updateRemoveButtonsVisibility();
         this.updateThumbnailsHighlight();
+    }
+
+    showNotification(message, type = 'info', duration = 5000) {
+        // Создаем элемент уведомления
+        const notification = document.createElement('div');
+        notification.className = `fixed top-4 right-4 p-4 rounded-lg shadow-lg z-50 ${
+            type === 'warning' ? 'bg-yellow-100 border border-yellow-400 text-yellow-700' :
+            type === 'error' ? 'bg-red-100 border border-red-400 text-red-700' :
+            'bg-blue-100 border border-blue-400 text-blue-700'
+        }`;
+        
+        notification.innerHTML = `
+            <div class="flex items-center">
+                <span class="mr-2">${type === 'warning' ? '⚠️' : type === 'error' ? '❌' : 'ℹ️'}</span>
+                <span>${message}</span>
+            </div>
+        `;
+        
+        // Добавляем на страницу
+        document.body.appendChild(notification);
+        
+        // Автоматически скрываем через указанное время
+        if (duration > 0) {
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, duration);
+        }
     }
 
     sortRangesByPages() {
