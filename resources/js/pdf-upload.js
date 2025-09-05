@@ -353,7 +353,8 @@ class PdfSplitter {
             this.addRange(
                 currentPage,
                 rangeEnd,
-                docName
+                docName,
+                true // isInitial = true
             );
             currentPage = rangeEnd + 1;
             
@@ -561,10 +562,12 @@ class PdfSplitter {
         return '134';
     }
 
-    addRange(from = null, to = null, fileName) {
-        this.rangeCounter++; // Увеличиваем счетчик при каждом создании
+    addRange(from = null, to = null, fileName, isInitial = false) {
+        if (!isInitial) {
+            this.rangeCounter++; // Увеличиваем только для пользовательских диапазонов
+        }
         const ranges = this.getRanges();
-        const docNumber = this.rangeCounter;
+        const docNumber = isInitial ? ranges.length + 1 : this.rangeCounter;
         const selectedType = this.determineDocumentType(fileName);
 
         const rangeColors = [
@@ -587,7 +590,7 @@ class PdfSplitter {
             'border-sky-500 bg-sky-50'
         ];
         
-        const colorIndex = this.rangeCounter;
+        const colorIndex = isInitial ? ranges.length : this.rangeCounter;
         const colorClass = rangeColors[colorIndex % rangeColors.length];
 
         if (ranges.length >= this.totalPages) {
@@ -952,6 +955,7 @@ class PdfSplitter {
             this.fileInput.value = '';
             this.hideFileInfo();
             this.clearFileError(); // Очищаем ошибки
+            this.rangeCounter = 0; // Сбрасываем счетчик диапазонов!
         }
         
         // Сбрасываем состояние кнопки загрузки
