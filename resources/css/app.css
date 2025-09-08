@@ -280,3 +280,41 @@
 .thumbnail-page.line-through .bg-gray-50 {
     background-color: rgba(249, 250, 251, 0.8) !important;
 }
+
+/* Стили для кнопок разделения */
+.split-range-btn {
+    position: absolute;
+    top: 50%;
+    right: -23px;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    background: white;
+    border: 2px solid #3b82f6;
+    border-radius: 50%;
+    color: #3b82f6;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.split-range-btn:hover {
+    background: #3b82f6;
+    color: white;
+}
+
+.thumbnail-container:hover .split-range-btn {
+    opacity: 1;
+}
+
+/* Контейнер для миниатюры с кнопкой */
+.thumbnail-container {
+    position: relative;
+    display: inline-block;
+}

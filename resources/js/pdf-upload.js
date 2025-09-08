@@ -376,6 +376,10 @@ class PdfSplitter {
                 thumb.className = 'thumbnail-page border-2 border-gray-200 rounded overflow-hidden hover:shadow-md transition';
                 thumb.dataset.pageNumber = pageNumber;
                 
+                // Создаем контейнер для миниатюры и кнопки разделения
+                const thumbContainer = document.createElement('div');
+                thumbContainer.className = 'thumbnail-container';
+                
                 thumb.innerHTML = `
                     <a href="${page.image_url}" data-glightbox="title: Страница ${pageNumber}">
                         <img src="${page.image_url}" 
@@ -387,7 +391,31 @@ class PdfSplitter {
                         <span class="text-xs range-highlight hidden"></span>
                     </div>
                 `;
-                thumbsContainer.appendChild(thumb);
+                
+                // Добавляем кнопку разделения (кроме последней страницы в диапазоне)
+                if (pageIndex < doc.pages.length - 1) {
+                    const splitBtn = document.createElement('button');
+                    splitBtn.className = 'split-range-btn';
+                    splitBtn.innerHTML = '✂️';
+                    splitBtn.title = 'Разделить диапазон здесь';
+                    splitBtn.dataset.splitAfter = pageNumber;
+                    splitBtn.dataset.docIndex = docIndex;
+                    
+                    splitBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.handleSplitRange(
+                            parseInt(e.target.dataset.docIndex),
+                            parseInt(e.target.dataset.splitAfter)
+                        );
+                    });
+                    
+                    thumbContainer.appendChild(thumb);
+                    thumbContainer.appendChild(splitBtn);
+                } else {
+                    thumbContainer.appendChild(thumb);
+                }
+                
+                thumbsContainer.appendChild(thumbContainer);
             });
             
             docContainer.appendChild(thumbsContainer);
@@ -399,6 +427,56 @@ class PdfSplitter {
         
         if (window._glightbox) {
             window._glightbox.reload();
+        }
+    }
+
+    handleSplitRange(docIndex, splitAfterPage) {
+        // Находим диапазон, который нужно разделить
+        const rangeElements = this.rangesContainer.children;
+        let targetRangeElement = null;
+        let targetRangeIndex = -1;
+        
+        Array.from(rangeElements).forEach((element, index) => {
+            const fromInput = element.querySelector('.from-input');
+            const toInput = element.querySelector('.to-input');
+            
+            if (fromInput && toInput) {
+                const from = parseInt(fromInput.value);
+                const to = parseInt(toInput.value);
+                
+                if (splitAfterPage >= from && splitAfterPage < to) {
+                    targetRangeElement = element;
+                    targetRangeIndex = index;
+                }
+            }
+        });
+        
+        if (!targetRangeElement) {
+            this.showNotification('Не удалось найти диапазон для разделения', 'error');
+            return;
+        }
+        
+        // Подтверждение действия
+        const fromInput = targetRangeElement.querySelector('.from-input');
+        const toInput = targetRangeElement.querySelector('.to-input');
+        const from = parseInt(fromInput.value);
+        const to = parseInt(toInput.value);
+        
+        if (confirm(`Действительно разделить диапазон на страницы ${from}-${splitAfterPage} и ${splitAfterPage + 1}-${to}?`)) {
+            // Обновляем первый диапазон
+            toInput.value = splitAfterPage;
+            
+            // Создаем второй диапазон
+            const docNameInput = targetRangeElement.querySelector('.document-name');
+            const originalName = docNameInput.value;
+            
+            this.addRange(
+                splitAfterPage + 1,
+                to,
+                `${originalName} (продолжение)`
+            );
+            
+            this.showNotification('Диапазон успешно разделен', 'success');
         }
     }
 
@@ -529,6 +607,40 @@ class PdfSplitter {
                     }
                 }
             }
+        });
+        // ОБНОВЛЯЕМ КНОПКИ РАЗДЕЛЕНИЯ
+        this.updateSplitButtonsVisibility(pagesInRanges);
+    }
+
+    updateSplitButtonsVisibility(pagesInRanges) {
+        const splitButtons = document.querySelectorAll('.split-range-btn');
+        
+        splitButtons.forEach(button => {
+            const splitAfterPage = parseInt(button.dataset.splitAfter);
+            const nextPage = splitAfterPage + 1;
+            
+            // Получаем актуальные диапазоны
+            const ranges = this.getRanges();
+            
+            // Проверяем, находятся ли страницы в одном диапазоне
+            let inSameRange = false;
+            
+            for (const range of ranges) {
+                if (splitAfterPage >= range.from && splitAfterPage <= range.to &&
+                    nextPage >= range.from && nextPage <= range.to) {
+                    inSameRange = true;
+                    break;
+                }
+            }
+            
+            // Скрываем кнопку если:
+            // 1. Страницы не в одном диапазоне
+            // 2. Либо одна из страниц не входит ни в один диапазон
+            const shouldHide = !inSameRange || 
+                            !pagesInRanges.has(splitAfterPage) || 
+                            !pagesInRanges.has(nextPage);
+            
+            button.style.display = shouldHide ? 'none' : 'flex';
         });
     }
 
