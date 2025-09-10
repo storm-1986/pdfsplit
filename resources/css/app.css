@@ -283,6 +283,31 @@
 
 /* Стили для кнопок разделения */
 .split-range-btn {
+    border: 2px solid #d32f2f;
+}
+
+.split-range-btn:hover {
+    background: #ffebee;
+    color: #d32f2f;
+}
+
+.thumbnail-container:hover .split-range-btn {
+    opacity: 1;
+}
+
+/* Контейнер для миниатюры с кнопкой */
+.thumbnail-container {
+    position: relative;
+    display: inline-block;
+}
+
+/* Стили для кнопок объединения */
+.merge-range-btn {
+
+    border: 2px solid #2e7d32;
+}
+
+.split-range-btn, .merge-range-btn{
     position: absolute;
     top: 50%;
     right: -23px;
@@ -290,9 +315,7 @@
     width: 36px;
     height: 36px;
     background: white;
-    border: 2px solid #3b82f6;
     border-radius: 50%;
-    color: #3b82f6;
     font-size: 18px;
     font-weight: bold;
     cursor: pointer;
@@ -304,17 +327,11 @@
     transition: opacity 0.2s ease;
 }
 
-.split-range-btn:hover {
-    background: #3b82f6;
-    color: white;
+.merge-range-btn:hover {
+    background: #e8f5e8;
+    color: #2e7d32;
 }
 
-.thumbnail-container:hover .split-range-btn {
+.thumbnail-container:hover .merge-range-btn {
     opacity: 1;
-}
-
-/* Контейнер для миниатюры с кнопкой */
-.thumbnail-container {
-    position: relative;
-    display: inline-block;
 }

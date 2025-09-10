@@ -396,22 +396,38 @@ class PdfSplitter {
                 if (pageIndex < doc.pages.length - 1) {
                     const splitBtn = document.createElement('button');
                     splitBtn.className = 'split-range-btn';
-                    splitBtn.innerHTML = '✂️';
+                    splitBtn.innerHTML = '➗';
                     splitBtn.title = 'Разделить диапазон здесь';
                     splitBtn.dataset.splitAfter = pageNumber;
                     splitBtn.dataset.docIndex = docIndex;
                     
                     splitBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        this.handleSplitRange(
-                            parseInt(e.target.dataset.docIndex),
-                            parseInt(e.target.dataset.splitAfter)
-                        );
+                        this.handleSplitRange(parseInt(e.target.dataset.splitAfter));
                     });
                     
                     thumbContainer.appendChild(thumb);
                     thumbContainer.appendChild(splitBtn);
-                } else {
+                }
+                // если есть следующий документ
+                else if (pageIndex === doc.pages.length - 1 && docIndex < this.uploadedDocuments.length - 1) {
+                    const mergeBtn = document.createElement('button');
+                    mergeBtn.className = 'merge-range-btn';
+                    mergeBtn.innerHTML = '➕';
+                    mergeBtn.title = 'Объединить с следующим документом';
+                    mergeBtn.dataset.afterPage = pageNumber; // ← Страница, после которой находится кнопка
+                    mergeBtn.dataset.docIndex = docIndex;
+                    
+                    
+                    mergeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.handleMergeDocuments(parseInt(e.target.dataset.docIndex));
+                    });
+                    
+                    thumbContainer.appendChild(thumb);
+                    thumbContainer.appendChild(mergeBtn);
+                }
+                else {
                     thumbContainer.appendChild(thumb);
                 }
                 
@@ -430,7 +446,7 @@ class PdfSplitter {
         }
     }
 
-    handleSplitRange(docIndex, splitAfterPage) {
+    handleSplitRange(splitAfterPage) {
         // Находим диапазон, который нужно разделить
         const rangeElements = this.rangesContainer.children;
         let targetRangeElement = null;
@@ -477,6 +493,40 @@ class PdfSplitter {
             );
             
             this.showNotification('Диапазон успешно разделен', 'success');
+        }
+    }
+
+    handleMergeDocuments(docIndex) {
+        const ranges = this.getRanges();
+        
+        if (docIndex >= ranges.length - 1) {
+            this.showNotification('Нет следующего документа для объединения', 'error');
+            return;
+        }
+        
+        const currentRange = ranges[docIndex];
+        const nextRange = ranges[docIndex + 1];
+        
+        if (confirm(`Действительно объединить диапазоны ${currentRange.from}-${currentRange.to} и ${nextRange.from}-${nextRange.to}?`)) {
+            // Обновляем правую границу текущего диапазона
+            const rangeElements = this.rangesContainer.children;
+            const currentRangeElement = rangeElements[docIndex];
+            const toInput = currentRangeElement.querySelector('.to-input');
+            toInput.value = nextRange.to;
+            
+            // Обновляем имя если нужно
+            const nameInput = currentRangeElement.querySelector('.document-name');
+            const nextNameInput = rangeElements[docIndex + 1].querySelector('.document-name');
+            if (nameInput.value !== nextNameInput.value) {
+                nameInput.value = `${nameInput.value} + ${nextNameInput.value}`;
+            }
+            
+            // Удаляем следующий диапазон
+            rangeElements[docIndex + 1].remove();
+            
+            // Просто обновляем видимость кнопок
+            this.updateThumbnailsHighlight();
+            this.showNotification('Диапазоны успешно объединены', 'success');
         }
     }
 
@@ -610,17 +660,16 @@ class PdfSplitter {
         });
         // ОБНОВЛЯЕМ КНОПКИ РАЗДЕЛЕНИЯ
         this.updateSplitButtonsVisibility(pagesInRanges);
+        this.updateMergeButtons();
     }
 
     updateSplitButtonsVisibility(pagesInRanges) {
+        const ranges = this.getRanges();
         const splitButtons = document.querySelectorAll('.split-range-btn');
         
         splitButtons.forEach(button => {
             const splitAfterPage = parseInt(button.dataset.splitAfter);
             const nextPage = splitAfterPage + 1;
-            
-            // Получаем актуальные диапазоны
-            const ranges = this.getRanges();
             
             // Проверяем, находятся ли страницы в одном диапазоне
             let inSameRange = false;
@@ -633,15 +682,63 @@ class PdfSplitter {
                 }
             }
             
-            // Скрываем кнопку если:
-            // 1. Страницы не в одном диапазоне
-            // 2. Либо одна из страниц не входит ни в один диапазон
             const shouldHide = !inSameRange || 
                             !pagesInRanges.has(splitAfterPage) || 
                             !pagesInRanges.has(nextPage);
             
             button.style.display = shouldHide ? 'none' : 'flex';
         });
+    }
+
+    updateMergeButtons() {
+        // Удаляем все существующие кнопки объединения
+        document.querySelectorAll('.merge-range-btn').forEach(btn => btn.remove());
+        
+        const rangeElements = this.rangesContainer.querySelectorAll('[data-doc-number]');
+        
+        // Создаем кнопки объединения для смежных диапазонов
+        for (let i = 0; i < rangeElements.length - 1; i++) {
+            const currentRange = rangeElements[i];
+            const nextRange = rangeElements[i + 1];
+            
+            const currentTo = parseInt(currentRange.querySelector('.to-input').value);
+            const nextFrom = parseInt(nextRange.querySelector('.from-input').value);
+            
+            // Проверяем, что диапазоны смежные
+            if (currentTo + 1 === nextFrom) {
+                // Находим миниатюру последней страницы текущего диапазона
+                const lastPageThumb = document.querySelector(`.thumbnail-page[data-page-number="${currentTo}"]`);
+                
+                if (lastPageThumb) {
+                    // Находим контейнер миниатюры
+                    const thumbContainer = lastPageThumb.closest('.thumbnail-container') || lastPageThumb.parentElement;
+                    
+                    // Создаем кнопку объединения
+                    const mergeBtn = document.createElement('button');
+                    mergeBtn.className = 'merge-range-btn';
+                    mergeBtn.innerHTML = '➕';
+                    mergeBtn.title = 'Объединить с следующим документом';
+                    mergeBtn.dataset.docIndex = i;
+                    
+                    mergeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.handleMergeDocuments(parseInt(e.target.dataset.docIndex));
+                    });
+                    
+                    // Добавляем кнопку в контейнер миниатюры
+                    if (thumbContainer.classList.contains('thumbnail-container')) {
+                        thumbContainer.appendChild(mergeBtn);
+                    } else {
+                        // Если нет специального контейнера, создаем его
+                        const newContainer = document.createElement('div');
+                        newContainer.className = 'thumbnail-container relative';
+                        lastPageThumb.parentNode.insertBefore(newContainer, lastPageThumb);
+                        newContainer.appendChild(lastPageThumb);
+                        newContainer.appendChild(mergeBtn);
+                    }
+                }
+            }
+        }
     }
 
     determineDocumentType(fileName) {
