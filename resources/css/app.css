@@ -335,3 +335,26 @@
 .thumbnail-container:hover .merge-range-btn {
     opacity: 1;
 }
+
+#globalDropOverlay {
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    transition: opacity 0.2s ease;
+}
+
+#globalDropOverlay > div {
+    animation: fadeInScale 0.15s ease-out;
+    border: 3px dashed #d1d5db;
+    background: rgba(255, 255, 255, 0.95);
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}

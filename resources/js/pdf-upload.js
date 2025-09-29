@@ -25,6 +25,7 @@ class PdfSplitter {
         this.initEventListeners();
         this.setupDragAndDrop();
         this.initCustomCounterpartySelect();
+        this.initAddFilesFunctionality();
 
         if (!this.splitButton) {
             console.error('Элемент split-button не найден');
@@ -104,6 +105,159 @@ class PdfSplitter {
                 setTimeout(() => uploadArea.classList.remove('border-green-500'), 1000);
             }
         });
+    }
+
+    initAddFilesFunctionality() {
+        const addMoreBtn = document.getElementById('addMoreFiles');
+        const additionalFilesInput = document.getElementById('additionalFiles');
+        const globalDropOverlay = document.getElementById('globalDropOverlay');
+        const previewContainer = document.getElementById('preview-container');
+        
+        // Обработчик кнопки "Добавить файлы"
+        addMoreBtn.addEventListener('click', () => {
+            additionalFilesInput.click();
+        });
+        
+        // Обработчик выбора файлов через input
+        additionalFilesInput.addEventListener('change', (e) => {
+            this.handleAdditionalFiles(e.target.files);
+            e.target.value = ''; // Сбрасываем значение
+        });
+        
+        // Глобальный drag & drop для всей страницы preview
+        this.setupGlobalDropZone(previewContainer, globalDropOverlay);
+    }
+
+    // Глобальный drag & drop для контейнера preview
+    setupGlobalDropZone(previewContainer, dropOverlay) {
+        let dragCounter = 0;
+        let isDragging = false;
+        
+        const preventDefaults = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        
+        // Обработчики для всей страницы
+        const events = ['dragenter', 'dragover', 'dragleave', 'drop'];
+        
+        events.forEach(eventName => {
+            document.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        // Показываем overlay при dragenter
+        document.addEventListener('dragenter', (e) => {
+            // Проверяем, что перетаскиваются файлы
+            if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+                dragCounter++;
+                isDragging = true;
+                
+                if (dragCounter === 1) {
+                    dropOverlay.classList.remove('hidden');
+                }
+            }
+        }, false);
+        
+        // dragover - ничего не делаем, только предотвращаем стандартное поведение
+        document.addEventListener('dragover', preventDefaults, false);
+        
+        // dragleave - уменьшаем счетчик когда вышли из документа
+        document.addEventListener('dragleave', (e) => {
+            // Проверяем, что курсор вышел за пределы окна браузера
+            if (e.clientX <= 0 || e.clientY <= 0 || 
+                e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+                dragCounter = 0;
+                isDragging = false;
+                dropOverlay.classList.add('hidden');
+            }
+        }, false);
+        
+        // drop - обрабатываем файлы и сбрасываем счетчик
+        document.addEventListener('drop', (e) => {
+            preventDefaults(e);
+            
+            // Сбрасываем состояние
+            dragCounter = 0;
+            isDragging = false;
+            dropOverlay.classList.add('hidden');
+            
+            // Проверяем, что файлы перетащены в область preview контейнера
+            const previewRect = previewContainer.getBoundingClientRect();
+            const isInPreviewArea = e.clientX >= previewRect.left && 
+                                e.clientX <= previewRect.right &&
+                                e.clientY >= previewRect.top && 
+                                e.clientY <= previewRect.bottom;
+            
+            if (isInPreviewArea && e.dataTransfer.files.length > 0) {
+                this.handleAdditionalFiles(e.dataTransfer.files);
+            }
+        }, false);
+        
+        // Дополнительная защита - скрываем overlay при клике или ESC
+        document.addEventListener('click', () => {
+            if (isDragging) {
+                dragCounter = 0;
+                isDragging = false;
+                dropOverlay.classList.add('hidden');
+            }
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && isDragging) {
+                dragCounter = 0;
+                isDragging = false;
+                dropOverlay.classList.add('hidden');
+            }
+        });
+        
+        // Защита от "зависшего" overlay при перезагрузке или навигации
+        window.addEventListener('beforeunload', () => {
+            dropOverlay.classList.add('hidden');
+        });
+    }
+
+    // Обработка дополнительных файлов
+    async handleAdditionalFiles(files) {
+        if (files.length === 0) return;
+        
+        // Показываем индикатор загрузки
+        this.showNotification(`Загружаем ${files.length} файл(ов)...`, 'info');
+        
+        try {
+            const formData = new FormData();
+            Array.from(files).forEach(file => {
+                formData.append('pdf_files[]', file);
+            });
+            
+            const response = await fetch('/upload-additional', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+            
+            if (!response.ok) throw new Error('Ошибка загрузки');
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Добавляем новые документы к существующим
+                this.uploadedDocuments = [...this.uploadedDocuments, ...result.documents];
+                
+                // Пересоздаем preview с обновленными документами
+                this.showPreview();
+                
+                this.showNotification(`Добавлено ${result.documents.length} файл(ов)`, 'success');
+            } else {
+                throw new Error(result.message || 'Ошибка обработки файлов');
+            }
+            
+        } catch (error) {
+            console.error('Error adding files:', error);
+            this.showNotification('Ошибка при добавлении файлов', 'error');
+        }
     }
 
     validateFileTypes(files) {
@@ -568,10 +722,26 @@ class PdfSplitter {
         
         // Получаем текущие диапазоны
         const rangeElements = this.rangesContainer.children;
-        const colors = [
-            'blue', 'green', 'yellow', 'purple', 'pink', 'indigo',
-            'red', 'teal', 'orange', 'cyan', 'lime', 'amber',
-            'emerald', 'violet', 'fuchsia', 'rose', 'sky'
+        
+        // Массив полных классов Tailwind для каждого цвета
+        const colorStyles = [
+            { border: 'border-blue-500', shadow: 'shadow-blue-100', bg: 'bg-blue-100', text: 'text-blue-800' },
+            { border: 'border-green-500', shadow: 'shadow-green-100', bg: 'bg-green-100', text: 'text-green-800' },
+            { border: 'border-yellow-500', shadow: 'shadow-yellow-100', bg: 'bg-yellow-100', text: 'text-yellow-800' },
+            { border: 'border-purple-500', shadow: 'shadow-purple-100', bg: 'bg-purple-100', text: 'text-purple-800' },
+            { border: 'border-pink-500', shadow: 'shadow-pink-100', bg: 'bg-pink-100', text: 'text-pink-800' },
+            { border: 'border-indigo-500', shadow: 'shadow-indigo-100', bg: 'bg-indigo-100', text: 'text-indigo-800' },
+            { border: 'border-red-500', shadow: 'shadow-red-100', bg: 'bg-red-100', text: 'text-red-800' },
+            { border: 'border-teal-500', shadow: 'shadow-teal-100', bg: 'bg-teal-100', text: 'text-teal-800' },
+            { border: 'border-orange-500', shadow: 'shadow-orange-100', bg: 'bg-orange-100', text: 'text-orange-800' },
+            { border: 'border-cyan-500', shadow: 'shadow-cyan-100', bg: 'bg-cyan-100', text: 'text-cyan-800' },
+            { border: 'border-lime-500', shadow: 'shadow-lime-100', bg: 'bg-lime-100', text: 'text-lime-800' },
+            { border: 'border-amber-500', shadow: 'shadow-amber-100', bg: 'bg-amber-100', text: 'text-amber-800' },
+            { border: 'border-emerald-500', shadow: 'shadow-emerald-100', bg: 'bg-emerald-100', text: 'text-emerald-800' },
+            { border: 'border-violet-500', shadow: 'shadow-violet-100', bg: 'bg-violet-100', text: 'text-violet-800' },
+            { border: 'border-fuchsia-500', shadow: 'shadow-fuchsia-100', bg: 'bg-fuchsia-100', text: 'text-fuchsia-800' },
+            { border: 'border-rose-500', shadow: 'shadow-rose-100', bg: 'bg-rose-100', text: 'text-rose-800' },
+            { border: 'border-sky-500', shadow: 'shadow-sky-100', bg: 'bg-sky-100', text: 'text-sky-800' }
         ];
         
         // Собираем все страницы, которые входят в диапазоны
@@ -580,7 +750,7 @@ class PdfSplitter {
         Array.from(rangeElements).forEach((rangeElement, rangeIndex) => {
             // Получаем исходный индекс цвета из data-атрибута
             const originalColorIndex = parseInt(rangeElement.getAttribute('data-color-index')) || rangeIndex;
-            const colorClass = colors[originalColorIndex % colors.length];
+            const style = colorStyles[originalColorIndex % colorStyles.length];
             
             const fromInput = rangeElement.querySelector('.from-input');
             const toInput = rangeElement.querySelector('.to-input');
@@ -597,7 +767,7 @@ class PdfSplitter {
                 );
                 
                 rangeElement.classList.remove(...colorClasses);
-                rangeElement.classList.add(`border-${colorClass}-500`, `bg-${colorClass}-50`);
+                rangeElement.classList.add(`border-${style.border.split('-')[1]}-500`, `bg-${style.border.split('-')[1]}-50`);
                 
                 for (let page = from; page <= to; page++) {
                     pagesInRanges.add(page);
@@ -605,7 +775,7 @@ class PdfSplitter {
                     const thumb = document.querySelector(`.thumbnail-page[data-page-number="${page}"]`);
                     if (thumb) {
                         thumb.classList.remove('border-gray-200', 'opacity-60', 'line-through');
-                        thumb.classList.add(`border-${colorClass}-500`, `shadow-${colorClass}-100`);
+                        thumb.classList.add(style.border, style.shadow);
                         
                         const badgeContainer = thumb.querySelector('.bg-gray-50');
                         if (badgeContainer) {
@@ -613,7 +783,7 @@ class PdfSplitter {
                             if (oldBadge) oldBadge.remove();
                             
                             const badge = document.createElement('span');
-                            badge.className = `range-highlight text-xs px-2 py-1 rounded ml-2 bg-${colorClass}-100 text-${colorClass}-800 font-medium`;
+                            badge.className = `range-highlight text-xs px-2 py-1 rounded ml-2 ${style.bg} ${style.text} font-medium`;
                             badge.textContent = `Д${rangeIndex + 1}`;
                             badgeContainer.appendChild(badge);
                         }
@@ -658,6 +828,7 @@ class PdfSplitter {
                 }
             }
         });
+        
         // ОБНОВЛЯЕМ КНОПКИ РАЗДЕЛЕНИЯ
         this.updateSplitButtonsVisibility(pagesInRanges);
         this.updateMergeButtons();

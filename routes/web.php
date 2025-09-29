@@ -15,5 +15,6 @@ use Illuminate\Support\Facades\Route;
 */
 Route::get('/', [PdfSplitterController::class, 'showUploadForm'])->name('pdf.upload');
 Route::post('/', [PdfSplitterController::class, 'uploadAndSplit'])->name('pdf.process');
+Route::post('/upload-additional', [PdfSplitterController::class, 'uploadAdditional'])->name('pdf.upload.additional'); // ← Добавляем эту строку
 Route::post('/pdf/cleanup', [PdfSplitterController::class, 'cleanup'])->name('pdf.cleanup');
 Route::post('/pdf/download-ranges', [PdfSplitterController::class, 'downloadRanges'])->name('pdf.download-ranges');

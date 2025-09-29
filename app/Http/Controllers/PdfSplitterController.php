@@ -64,81 +64,110 @@ class PdfSplitterController extends Controller
         }
     }
 
+    /**
+     * Общий метод для обработки файлов
+     */
+    private function processFiles($files, $ipAddress)
+    {
+        // Если это одиночный файл, превращаем в массив
+        if (!is_array($files)) {
+            $files = [$files];
+        }
+
+        // Валидация для каждого файла
+        foreach ($files as $file) {
+            $extension = strtolower($file->getClientOriginalExtension());
+            if (!in_array($extension, ['pdf', 'msg'])) {
+                throw new \Exception('Файл должен быть в формате PDF или MSG');
+            }
+            
+            if ($file->getSize() > 50000000) {
+                throw new \Exception('Размер файла не должен превышать 50MB');
+            }
+        }
+
+        $sessionId = Str::random(20);
+        $allDocuments = [];
+        $documentIndex = 0;
+        
+        foreach ($files as $file) {
+            if (strtolower($file->getClientOriginalExtension()) === 'msg') {
+                $tempDir = 'temp_pdfs/' . $sessionId;
+                Storage::makeDirectory($tempDir);
+
+                $tempMsgPath = storage_path('app/temp_msg/' . Str::random(20) . '.msg');
+                file_put_contents($tempMsgPath, file_get_contents($file->getRealPath()));
+
+                $documents = $this->extractPdfFromBinary($tempMsgPath, $sessionId, $tempDir, $documentIndex, $ipAddress);
+                @unlink($tempMsgPath);
+
+                if (!empty($documents)) {
+                    $allDocuments = array_merge($allDocuments, $documents);
+                    $documentIndex += count($documents);
+                }
+            } else {
+                $pdfPath = $file->storeAs('temp_pdfs/' . $sessionId, $file->getClientOriginalName());
+                
+                $allDocuments[] = [
+                    'original_name' => $file->getClientOriginalName(),
+                    'pages' => $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex),
+                    'pdf_path' => $pdfPath,
+                    'session_id' => $sessionId
+                ];
+                $documentIndex++;
+            }
+        }
+
+        if (empty($allDocuments)) {
+            throw new \Exception('Не удалось обработать ни один файл');
+        }
+
+        return [
+            'documents' => $allDocuments,
+            'session_id' => $sessionId
+        ];
+    }
+
     public function uploadAndSplit(Request $request)
     {
         $ipAddress = $request->ip();
         try {
-            // Правильно получаем файлы (массив или одиночный файл)
             $files = $request->allFiles()['pdf'] ?? [];
-            
-            // Если это одиночный файл, превращаем в массив
-            if (!is_array($files)) {
-                $files = [$files];
-            }
+            $result = $this->processFiles($files, $ipAddress);
 
-            // Валидация для каждого файла
-            foreach ($files as $file) {
-                $extension = strtolower($file->getClientOriginalExtension());
-                if (!in_array($extension, ['pdf', 'msg'])) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Файл должен быть в формате PDF или MSG'
-                    ], 422);
-                }
-                
-                if ($file->getSize() > 50000000) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Размер файла не должен превышать 50MB'
-                    ], 422);
-                }
-            }
-
-            $sessionId = Str::random(20);
-            $allDocuments = [];
-            $documentIndex = 0;
-            
-            foreach ($files as $file) {
-                if (strtolower($file->getClientOriginalExtension()) === 'msg') {
-                    $tempDir = 'temp_pdfs/' . $sessionId;
-                    Storage::makeDirectory($tempDir);
-
-                    $tempMsgPath = storage_path('app/temp_msg/' . Str::random(20) . '.msg');
-                    file_put_contents($tempMsgPath, file_get_contents($file->getRealPath()));
-
-                    $documents = $this->extractPdfFromBinary($tempMsgPath, $sessionId, $tempDir, $documentIndex, $ipAddress);
-                    @unlink($tempMsgPath);
-
-                    if (!empty($documents)) {
-                        $allDocuments = array_merge($allDocuments, $documents);
-                        $documentIndex += count($documents);
-                    }
-                } else {
-                    $pdfPath = $file->storeAs('temp_pdfs/' . $sessionId, $file->getClientOriginalName());
-                    
-                    $allDocuments[] = [
-                        'original_name' => $file->getClientOriginalName(),
-                        'pages' => $this->generateThumbnails(storage_path('app/' . $pdfPath), $sessionId, $documentIndex),
-                        'pdf_path' => $pdfPath,
-                        'session_id' => $sessionId
-                    ];
-                    $documentIndex++;
-                }
-            }
-
-            if (empty($allDocuments)) {
-                throw new \Exception('Не удалось обработать ни один файл');
-            }
-
-            // Всегда возвращаем новый формат для единообразия
             return response()->json([
                 'success' => true,
-                'documents' => $allDocuments,
-                'session_id' => $sessionId
+                'documents' => $result['documents'],
+                'session_id' => $result['session_id']
             ]);
 
         } catch (\Exception $e) {
             Log::error($ipAddress . ' Upload failed ', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Ошибка обработки файла: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function uploadAdditional(Request $request)
+    {
+        $ipAddress = $request->ip();
+        try {
+            $files = $request->allFiles()['pdf_files'] ?? [];
+            $result = $this->processFiles($files, $ipAddress);
+
+            return response()->json([
+                'success' => true,
+                'documents' => $result['documents'],
+                'session_id' => $result['session_id']
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error($ipAddress . ' Upload additional failed ', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
