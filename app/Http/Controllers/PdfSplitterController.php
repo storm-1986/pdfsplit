@@ -131,7 +131,22 @@ class PdfSplitterController extends Controller
     public function uploadFromUrl(Request $request)
     {
         $request->validate([
-            'url' => 'required|url'
+            'url' => ['required', function ($attribute, $value, $fail) {
+                // Простая проверка, что это похоже на URL
+                if (!preg_match('~^(https?|ftp)://~i', $value)) {
+                    $fail('URL должен начинаться с http://, https:// или ftp://');
+                    return;
+                }
+                
+                // Проверяем расширение файла
+                $parsed = parse_url($value);
+                $urlPath = $parsed['path'] ?? '';
+                $extension = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
+                
+                if (!in_array($extension, ['pdf', 'msg'])) {
+                    $fail('Поддерживаются только ссылки на PDF и MSG файлы');
+                }
+            }]
         ]);
 
         $ipAddress = $request->ip();
@@ -139,19 +154,12 @@ class PdfSplitterController extends Controller
         try {
             $url = $request->input('url');
             
-            // Проверяем расширение файла
-            $urlPath = parse_url($url, PHP_URL_PATH);
-            $extension = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
-            
-            if (!in_array($extension, ['pdf', 'msg'])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Поддерживаются только ссылки на PDF и MSG файлы'
-                ], 422);
-            }
-            
             // Скачиваем файл
             $fileContent = $this->downloadFromOldSharePoint($url);
+            
+            // Получаем расширение из URL (уже проверено в валидации)
+            $urlPath = parse_url($url, PHP_URL_PATH);
+            $extension = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
             
             // Создаем временный файл
             $tempFileName = tempnam(sys_get_temp_dir(), 'pdfsplit_') . '.' . $extension;
@@ -192,8 +200,8 @@ class PdfSplitterController extends Controller
     private function downloadFromOldSharePoint($url)
     {
         $credentials = [
-            'username' => 'bmk\\shtorm',
-            'password' => 'inxDZ567'
+            'username' => 'bmk\\sps1',
+            'password' => 'sps1_2018!'
         ];
         
         $ch = curl_init();
