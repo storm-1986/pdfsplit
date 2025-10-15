@@ -128,6 +128,107 @@ class PdfSplitterController extends Controller
         ];
     }
 
+    public function uploadFromUrl(Request $request)
+    {
+        $request->validate([
+            'url' => 'required|url'
+        ]);
+
+        $ipAddress = $request->ip();
+        
+        try {
+            $url = $request->input('url');
+            
+            // Проверяем расширение файла
+            $urlPath = parse_url($url, PHP_URL_PATH);
+            $extension = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
+            
+            if (!in_array($extension, ['pdf', 'msg'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Поддерживаются только ссылки на PDF и MSG файлы'
+                ], 422);
+            }
+            
+            // Скачиваем файл
+            $fileContent = $this->downloadFromOldSharePoint($url);
+            
+            // Создаем временный файл
+            $tempFileName = tempnam(sys_get_temp_dir(), 'pdfsplit_') . '.' . $extension;
+            file_put_contents($tempFileName, $fileContent);
+            
+            // Создаем UploadedFile объект с правильными аргументами
+            $uploadedFile = new \Illuminate\Http\UploadedFile(
+                $tempFileName,
+                basename($urlPath),
+                mime_content_type($tempFileName),
+                null, // size - может быть null
+                UPLOAD_ERR_OK,
+                true // test = true для временных файлов
+            );
+            
+            // Используем существующий processFiles
+            $result = $this->processFiles([$uploadedFile], $ipAddress);
+            
+            // Удаляем временный файл
+            unlink($tempFileName);
+            
+            return response()->json([
+                'success' => true,
+                'documents' => $result['documents'],
+                'session_id' => $result['session_id']
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error($ipAddress . ' URL upload failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Ошибка загрузки файла: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function downloadFromOldSharePoint($url)
+    {
+        $credentials = [
+            'username' => 'bmk\\shtorm',
+            'password' => 'inxDZ567'
+        ];
+        
+        $ch = curl_init();
+        
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 30,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            CURLOPT_HTTPAUTH => CURLAUTH_NTLM,
+            CURLOPT_USERPWD => $credentials['username'] . ':' . $credentials['password'],
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 10,
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        
+        if (curl_error($ch)) {
+            $error = curl_error($ch);
+            curl_close($ch);
+            throw new \Exception("cURL error: $error");
+        }
+        
+        curl_close($ch);
+        
+        if ($httpCode === 200 && $response && strlen($response) > 0) {
+            return $response;
+        }
+        
+        throw new \Exception("HTTP error: $httpCode");
+    }
+
     public function uploadAndSplit(Request $request)
     {
         $ipAddress = $request->ip();

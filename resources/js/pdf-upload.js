@@ -1,6 +1,7 @@
 class PdfSplitter {
     constructor() {
         this.uploadedDocuments = [];
+        this.pendingUrls = [];
         this.uploadForm = document.getElementById('upload-form');
         this.fileInput = document.getElementById('pdf');
         this.previewContainer = document.getElementById('preview-container');
@@ -83,28 +84,123 @@ class PdfSplitter {
         });
 
         uploadArea.addEventListener('drop', (e) => {
-            const files = e.dataTransfer.files;
+            const items = e.dataTransfer.items;
             
-            if (files.length > 0) {
-                // Очищаем предыдущие ошибки
-                this.clearFileError();
-                // Проверяем типы файлов перед установкой
-                const invalidFiles = this.validateFileTypes(files);
-
-                if (invalidFiles.length > 0) {
-                    this.showFileError(`Вы пытаетесь загрузить недопустимый тип файла: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
-                    return; // Не добавляем файлы
+            // Проверяем, есть ли среди перетаскиваемых элементов ссылки
+            let hasUrls = false;
+            let hasFiles = false;
+            
+            // Сначала проверяем ссылки
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type === 'text/uri-list') {
+                    hasUrls = true;
+                    break;
                 }
-
-                // Создаем искусственное событие change для fileInput
-                this.fileInput.files = files;
-                const event = new Event('change', { bubbles: true });
-                this.fileInput.dispatchEvent(event);
+                if (items[i].kind === 'file') {
+                    hasFiles = true;
+                }
+            }
+            
+            // Если есть ссылки - обрабатываем их
+            if (hasUrls) {
+                e.dataTransfer.items[0].getAsString((url) => {
+                    if (this.isValidFileUrl(url)) {
+                        this.handleUrlDrop(url);
+                    } else {
+                        this.showFileError('Некорректная ссылка. Поддерживаются только ссылки на PDF и MSG файлы');
+                    }
+                });
+            } 
+            // Если есть файлы - обрабатываем их
+            else if (hasFiles) {
+                const files = e.dataTransfer.files;
                 
-                uploadArea.classList.add('border-green-500');
-                setTimeout(() => uploadArea.classList.remove('border-green-500'), 1000);
+                if (files.length > 0) {
+                    // Очищаем предыдущие ошибки
+                    this.clearFileError();
+                    // Проверяем типы файлов перед установкой
+                    const invalidFiles = this.validateFileTypes(files);
+
+                    if (invalidFiles.length > 0) {
+                        this.showFileError(`Вы пытаетесь загрузить недопустимый тип файла: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
+                        return; // Не добавляем файлы
+                    }
+
+                    // Создаем искусственное событие change для fileInput
+                    this.fileInput.files = files;
+                    const event = new Event('change', { bubbles: true });
+                    this.fileInput.dispatchEvent(event);
+                    
+                    uploadArea.classList.add('border-green-500');
+                    setTimeout(() => uploadArea.classList.remove('border-green-500'), 1000);
+                }
             }
         });
+    }
+
+    // Проверка валидности URL файла
+    isValidFileUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            const pathname = urlObj.pathname.toLowerCase();
+            
+            // Получаем расширение файла
+            const extension = pathname.split('.').pop();
+            const isSupportedExtension = (extension === 'pdf' || extension === 'msg');
+            const isHttpProtocol = (urlObj.protocol === 'http:' || urlObj.protocol === 'https:');
+           
+            if (!isHttpProtocol) {
+                this.showNotification('Ссылка должна использовать HTTP или HTTPS протокол', 'error');
+                return false;
+            }
+            
+            if (!isSupportedExtension) {
+                this.showNotification(
+                    `Неподдерживаемый тип файла: .${extension}. Разрешены только .pdf и .msg файлы`, 
+                    'error'
+                );
+                return false;
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.log('URL validation failed:', error);
+            this.showNotification('Некорректная ссылка', 'error');
+            return false;
+        }
+    }
+
+    // Получение имени файла из URL
+    getFileNameFromUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            const pathname = urlObj.pathname;
+            const fileName = pathname.split('/').pop() || 'file_from_url';
+            return decodeURIComponent(fileName);
+        } catch {
+            return 'file_from_url';
+        }
+    }
+
+    // Обработка перетаскивания URL - просто добавляем в список
+    handleUrlDrop(url) {
+        if (!this.isValidFileUrl(url)) {
+            this.showFileError('Некорректная ссылка. Поддерживаются только ссылки на PDF и MSG файлы');
+            return;
+        }
+
+        // Добавляем URL в массив ожидающих загрузки
+        this.pendingUrls.push(url);
+        
+        // Вызываем handleFileChange для обновления интерфейса и проверок
+        // Создаем искусственное событие
+        const event = new Event('change', { bubbles: true });
+        Object.defineProperty(event, 'target', {
+            value: this.fileInput,
+            writable: false
+        });
+        this.handleFileChange(event);
     }
 
     initAddFilesFunctionality() {
@@ -147,8 +243,9 @@ class PdfSplitter {
         
         // Показываем overlay при dragenter
         document.addEventListener('dragenter', (e) => {
-            // Проверяем, что перетаскиваются файлы
-            if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+            // Проверяем, что перетаскиваются файлы ИЛИ ссылки
+            if (e.dataTransfer.types && 
+                (e.dataTransfer.types.includes('Files') || e.dataTransfer.types.includes('text/uri-list'))) {
                 dragCounter++;
                 isDragging = true;
                 
@@ -172,7 +269,7 @@ class PdfSplitter {
             }
         }, false);
         
-        // drop - обрабатываем файлы и сбрасываем счетчик
+        // drop - обрабатываем файлы/ссылки и сбрасываем счетчик
         document.addEventListener('drop', (e) => {
             preventDefaults(e);
             
@@ -181,15 +278,35 @@ class PdfSplitter {
             isDragging = false;
             dropOverlay.classList.add('hidden');
             
-            // Проверяем, что файлы перетащены в область preview контейнера
+            // Проверяем, что элементы перетащены в область preview контейнера
             const previewRect = previewContainer.getBoundingClientRect();
             const isInPreviewArea = e.clientX >= previewRect.left && 
                                 e.clientX <= previewRect.right &&
                                 e.clientY >= previewRect.top && 
                                 e.clientY <= previewRect.bottom;
             
-            if (isInPreviewArea && e.dataTransfer.files.length > 0) {
-                this.handleAdditionalFiles(e.dataTransfer.files);
+            if (isInPreviewArea) {
+                // Получаем URL из text/uri-list
+                let url = null;
+                if (e.dataTransfer.types.includes('text/uri-list')) {
+                    url = e.dataTransfer.getData('text/uri-list');
+                }
+                
+                // Если нашли URL - обрабатываем
+                if (url) {
+                    if (this.isValidFileUrl(url)) {
+                        this.processUrlInPreview(url);
+                    }
+                    // Если URL невалидный - isValidFileUrl уже показал уведомление
+                    return; // Важно: выходим после обработки URL
+                }
+                
+                // Если нет URL, проверяем файлы
+                if (e.dataTransfer.files.length > 0) {
+                    this.handleAdditionalFiles(e.dataTransfer.files);
+                } else {
+                    console.log('No files or URL found in drop');
+                }
             }
         }, false);
         
@@ -214,6 +331,23 @@ class PdfSplitter {
         window.addEventListener('beforeunload', () => {
             dropOverlay.classList.add('hidden');
         });
+    }
+
+    // Обработка URL в режиме preview
+    async processUrlInPreview(url) {
+        try {
+            this.showNotification('Загружаем файл по ссылке...', 'info');
+            
+            await this.processSingleUrl(url);
+            
+            // После успешной загрузки обновляем preview
+            this.showPreview();
+            this.showNotification('Файл успешно добавлен по ссылке', 'success');
+            
+        } catch (error) {
+            console.error('URL upload in preview failed:', error);
+            this.showNotification('Ошибка при добавлении файла по ссылке: ' + error.message, 'error');
+        }
     }
 
     // Обработка дополнительных файлов
@@ -275,25 +409,32 @@ class PdfSplitter {
         // Очищаем ошибку при новом выборе файлов
         this.clearFileError();
         
-        if (files.length > 0) {
-            // Проверяем типы файлов
+        if (files.length > 0 || this.pendingUrls.length > 0) {
+            // Проверяем типы файлов (только для обычных файлов)
             const invalidFiles = this.validateFileTypes(files);
 
             if (invalidFiles.length > 0) {
                 this.showFileError(`Вы пытаетесь загрузить недопустимый тип файла: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
                 this.fileInput.value = ''; // Очищаем input
-                this.uploadButton.disabled = true;
+                this.pendingUrls = []; // Очищаем URL тоже
+                this.showSelectedFiles(this.fileInput.files, this.pendingUrls);
                 return;
             }
 
-            this.showSelectedFiles(files);
+            this.showSelectedFiles(files, this.pendingUrls);
             this.uploadButton.disabled = false;
         } else {
+            // Если нет ни файлов ни URL - деактивируем кнопку
             this.uploadButton.disabled = true;
+            // Скрываем контейнер с файлами
+            const container = document.querySelector('.file-info-container');
+            if (container) {
+                container.classList.add('hidden');
+            }
         }
     }
 
-    showSelectedFiles(fileList) {
+    showSelectedFiles(fileList, urlList = []) {
         const container = document.querySelector('.file-info-container');
         const fileNameSpan = document.querySelector('.file-name');
         
@@ -302,24 +443,56 @@ class PdfSplitter {
             fileNameSpan.innerHTML = '';
             
             // Преобразуем FileList в массив
-            const files = Array.from(fileList);
+            const files = Array.from(fileList || []);
+            const urls = urlList || [];
             
-            // Создаем список файлов
+            const allItems = [];
+            
+            // Добавляем обычные файлы
             files.forEach((file, index) => {
+                allItems.push({
+                    type: 'file',
+                    name: file.name,
+                    index: index,
+                    isPDF: file.name.toLowerCase().endsWith('.pdf'),
+                    isMSG: file.name.toLowerCase().endsWith('.msg')
+                });
+            });
+            
+            // Добавляем URL
+            urls.forEach((url, index) => {
+                const fileName = this.getFileNameFromUrl(url);
+                allItems.push({
+                    type: 'url',
+                    name: fileName,
+                    url: url,
+                    index: index,
+                    isPDF: fileName.toLowerCase().endsWith('.pdf'),
+                    isMSG: fileName.toLowerCase().endsWith('.msg')
+                });
+            });
+            
+            // Создаем список файлов и URL (БЕЗ КНОПОК УДАЛЕНИЯ)
+            allItems.forEach((item, globalIndex) => {
                 const fileElement = document.createElement('div');
-                fileElement.className = 'file-item flex items-center mb-1 last:mb-0';
+                fileElement.className = 'file-item flex items-center mb-1 last:mb-0'; // Убрали justify-between
                 
-                // Определяем тип файла по расширению, так как file.type может быть пустым для MSG
-                const isPDF = file.name.toLowerCase().endsWith('.pdf');
-                const isMSG = file.name.toLowerCase().endsWith('.msg');
+                let icon = '';
                 
-                const icon = isPDF 
-                    ? '<svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z"/></svg>'
-                    : '<svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>';
+                if (item.type === 'file') {
+                    icon = item.isPDF 
+                        ? '<svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6.414A2 2 0 0016.414 5L14 2.586A2 2 0 0012.586 2H9z"/></svg>'
+                        : '<svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"/><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"/></svg>';
+                } else {
+                    // Для URL используем иконку ссылки
+                    icon = '<svg class="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>';
+                }
                 
                 fileElement.innerHTML = `
-                    ${icon}
-                    <span class="text-sm truncate">${file.name}</span>
+                    <div class="flex items-center truncate">
+                        ${icon}
+                        <span class="text-sm truncate" title="${item.type === 'url' ? item.url : item.name}">${item.name}</span>
+                    </div>
                 `;
                 
                 fileNameSpan.appendChild(fileElement);
@@ -329,9 +502,14 @@ class PdfSplitter {
             container.classList.remove('hidden');
             
             // Автоматически расширяем блок если много файлов
-            if (files.length > 2) {
+            if (allItems.length > 2) {
                 container.classList.add('overflow-y-auto', 'max-h-32');
             }
+            
+            // Активируем кнопку загрузки если есть файлы или URL
+            this.uploadButton.disabled = allItems.length === 0;
+            
+            // УБИРАЕМ обработчики для кнопок удаления - их больше нет
         }
     }
 
@@ -355,59 +533,50 @@ class PdfSplitter {
     async handleSubmit(e) {
         e.preventDefault();
         const files = Array.from(this.fileInput.files);
+        const hasFiles = files.length > 0;
+        const hasUrls = this.pendingUrls.length > 0;
 
         // Очищаем предыдущие ошибки
         this.clearFileError();
         
-        if (files.length === 0) {
-            this.showFileError('Пожалуйста, выберите файлы');
+        if (!hasFiles && !hasUrls) {
+            this.showFileError('Пожалуйста, выберите файлы или добавьте ссылки');
             return;
         }
 
-        // Дополнительная проверка перед отправкой
-        const invalidFiles = this.validateFileTypes(files);
-
-        if (invalidFiles.length > 0) {
-            this.showFileError(`Недопустимые типы файлов: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
-            return;
+        // Дополнительная проверка перед отправкой (только для файлов)
+        if (hasFiles) {
+            const invalidFiles = this.validateFileTypes(files);
+            if (invalidFiles.length > 0) {
+                this.showFileError(`Недопустимые типы файлов: ${invalidFiles.map(f => f.name).join(', ')}. Разрешены только PDF и MSG.`);
+                return;
+            }
         }
 
         // Частичный сброс (сохраняем выбранные файлы)
         this.resetForm(true);
-        this.showLoader(files.length);
+        
+        const totalItems = files.length + this.pendingUrls.length;
+        this.showLoader(totalItems);
         const originalButtonHtml = this.uploadButton.innerHTML;
 
         try {
-            const formData = new FormData();
-            
-            // Добавляем все файлы
-            files.forEach(file => {
-                formData.append('pdf[]', file); // Важно: pdf[] для массива
-            });
-            
-            formData.append('_token', document.querySelector('input[name="_token"]').value);
-            
-            // Добавляем флаг множественной загрузки
-            if (files.length > 1) {
-                formData.append('hasMultipleFiles', 'true');
+            // Обрабатываем URL если есть
+            if (hasUrls) {
+                for (const url of this.pendingUrls) {
+                    await this.processSingleUrl(url);
+                }
             }
-
-            const response = await fetch(this.uploadForm.action, {
-                method: 'POST',
-                body: formData
-            });
             
-            const result = await response.json();
-            
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || 'Ошибка загрузки');
+            // Обрабатываем локальные файлы если есть
+            if (hasFiles) {
+                await this.processLocalFiles(files);
             }
-
-            // Всегда используем documents, даже если один файл
-            this.uploadedDocuments = result.documents || [];
-                
+            
+            // Если есть загруженные документы - показываем preview
             if (this.uploadedDocuments.length > 0) {
                 this.showPreview();
+                this.showNotification('Все файлы успешно загружены', 'success');
             } else {
                 throw new Error('Не удалось загрузить ни один файл');
             }
@@ -417,6 +586,70 @@ class PdfSplitter {
         } finally {
             this.uploadButton.disabled = false;
             this.uploadButton.innerHTML = originalButtonHtml;
+        }
+    }
+
+    // Обработка одного URL
+    async processSingleUrl(url) {
+        try {
+            const response = await fetch('/upload-from-url', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ url: url })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.uploadedDocuments = [...this.uploadedDocuments, ...result.documents];
+                this.sessionId = result.session_id;
+            } else {
+                throw new Error(result.message);
+            }
+            
+        } catch (error) {
+            throw new Error(`Ошибка загрузки по ссылке: ${error.message}`);
+        }
+    }
+
+    // Обработка локальных файлов
+    async processLocalFiles(files) {
+        const formData = new FormData();
+        
+        // Добавляем все файлы
+        files.forEach(file => {
+            formData.append('pdf[]', file); // Важно: pdf[] для массива
+        });
+        
+        formData.append('_token', document.querySelector('input[name="_token"]').value);
+        
+        // Добавляем флаг множественной загрузки
+        if (files.length > 1) {
+            formData.append('hasMultipleFiles', 'true');
+        }
+
+        const response = await fetch(this.uploadForm.action, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('HTTP error');
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            this.uploadedDocuments = [...this.uploadedDocuments, ...result.documents];
+            this.sessionId = result.session_id;
+        } else {
+            throw new Error(result.message);
         }
     }
 
@@ -1337,9 +1570,10 @@ class PdfSplitter {
         const downloadBtn = document.getElementById('download-button-container');
         if (downloadBtn) downloadBtn.remove();
         
-        // Сбрасываем файлы только если явно указано
+        // Сбрасываем файлы и URL только если явно указано
         if (!keepFiles) {
             this.fileInput.value = '';
+            this.pendingUrls = []; // Очищаем URL
             this.hideFileInfo();
             this.clearFileError(); // Очищаем ошибки
             this.rangeCounter = 0; // Сбрасываем счетчик диапазонов!
