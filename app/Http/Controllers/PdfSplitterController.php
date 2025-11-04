@@ -200,9 +200,14 @@ class PdfSplitterController extends Controller
     private function downloadFromOldSharePoint($url)
     {
         $credentials = [
-            'username' => 'bmk\\sps1',
-            'password' => 'sps1_2018!'
+            'username' => env('SHAREPOINT_USERNAME'),
+            'password' => env('SHAREPOINT_PASSWORD')
         ];
+
+        // Проверяем, что credentials загружены из .env
+        if (empty($credentials['username']) || empty($credentials['password'])) {
+            throw new \Exception('Не указаны логин и пароль SharePoint в env файле');
+        }
         
         $ch = curl_init();
         
