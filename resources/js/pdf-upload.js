@@ -1566,9 +1566,8 @@ class PdfSplitter {
         this.previewContainer.classList.add('hidden');
         document.getElementById('upload-container').classList.remove('hidden');
         
-        // Очищаем кнопку скачивания
-        const downloadBtn = document.getElementById('download-button-container');
-        if (downloadBtn) downloadBtn.remove();
+        // Очищаем кнопки действий
+        this.hideActionButtons();
         
         // Сбрасываем файлы и URL только если явно указано
         if (!keepFiles) {
@@ -1609,7 +1608,7 @@ class PdfSplitter {
             Обработка...
         `;
 
-        this.hideDownloadButton();
+        this.hideActionButtons();
 
         // Проверяем, что все диапазоны валидны
         const ranges = this.getRanges();
@@ -1649,7 +1648,8 @@ class PdfSplitter {
             const data = await response.json();
             if (!response.ok) throw new Error(data.message || 'Ошибка сервера');
             
-            this.showDownloadButton(data.download_url, data.filename);
+            // Передаем ranges в showDownloadButton
+            this.showDownloadButton(data.download_url, data.filename, ranges);
 
         } catch (error) {
             this.showSplitError(error.message);
@@ -1659,16 +1659,24 @@ class PdfSplitter {
         }
     }
 
-    showDownloadButton(downloadUrl, filename) {
-        // Удаляем предыдущую кнопку
-        const oldButton = document.getElementById('download-button-container');
-        if (oldButton) oldButton.remove();
+    showDownloadButton(downloadUrl, filename, ranges) {
+        // Удаляем предыдущие кнопки
+        const oldDownloadBtn = document.getElementById('download-button-container');
+        if (oldDownloadBtn) oldDownloadBtn.remove();
         
-        // Создаем кнопку
+        const oldDirectumBtn = document.getElementById('directum-button-container');
+        if (oldDirectumBtn) oldDirectumBtn.remove();
+
+        // Создаем контейнер для кнопок
+        const buttonsContainer = document.createElement('div');
+        buttonsContainer.className = 'flex flex-col sm:flex-row gap-3 mt-4';
+        buttonsContainer.id = 'action-buttons-container';
+
+        // Кнопка скачивания
         const downloadBtn = document.createElement('a');
-        downloadBtn.id = 'download-button-container'; // Важно: тот же ID
+        downloadBtn.id = 'download-button-container';
         downloadBtn.href = downloadUrl;
-        downloadBtn.className = 'w-full bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer text-sm flex items-center justify-center mt-4';
+        downloadBtn.className = 'flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer flex items-center justify-center';
         downloadBtn.download = filename;
         downloadBtn.innerHTML = `
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1676,15 +1684,105 @@ class PdfSplitter {
             </svg>
             Скачать файлы
         `;
-        
-        // Вставляем после кнопки "Разделить PDF"
-        this.splitButton.insertAdjacentElement('afterend', downloadBtn);
+
+        // Кнопка отправки в Directum
+        const directumBtn = document.createElement('button');
+        directumBtn.id = 'directum-button-container';
+        directumBtn.type = 'button';
+        directumBtn.className = 'flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md font-medium transition duration-200 cursor-pointer flex items-center justify-center';
+        directumBtn.innerHTML = `
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7l4-4m0 0l4 4m-4-4v18m0 0l-4-4m4 4l4-4"></path>
+            </svg>
+            Отправить в Directum
+        `;
+
+        // Обработчик для кнопки Directum
+        directumBtn.addEventListener('click', () => {
+            this.sendToDirectum(ranges, downloadUrl);
+        });
+
+        // Добавляем кнопки в контейнер
+        buttonsContainer.appendChild(downloadBtn);
+        buttonsContainer.appendChild(directumBtn);
+
+        // Вставляем контейнер после кнопки "Разделить PDF"
+        this.splitButton.insertAdjacentElement('afterend', buttonsContainer);
     }
 
-    hideDownloadButton() {
-        const downloadBtn = document.getElementById('download-button-container');
-        if (downloadBtn) {
-            downloadBtn.style.display = 'none';
+    async sendToDirectum(ranges, downloadUrl) {
+        const selectedCounterparty = this.getSelectedCounterparty();
+        
+        if (!selectedCounterparty) {
+            this.showNotification('Пожалуйста, выберите контрагента', 'error');
+            return;
+        }
+
+        const directumBtn = document.getElementById('directum-button-container');
+        const originalHtml = directumBtn.innerHTML;
+        
+        try {
+            // Показываем индикатор загрузки
+            directumBtn.disabled = true;
+            directumBtn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Отправка...
+            `;
+/*
+            // Скачиваем ZIP-архив
+            const zipResponse = await fetch(downloadUrl);
+            const zipBlob = await zipResponse.blob();
+
+            // Создаем FormData для отправки
+            const formData = new FormData();
+            formData.append('zip_file', zipBlob, 'documents.zip');
+            formData.append('counterparty_kpl', selectedCounterparty.kpl);
+            formData.append('counterparty_name', selectedCounterparty.name);
+            formData.append('ranges', JSON.stringify(ranges));
+
+            // Отправляем в Directum
+            const response = await fetch('/send-to-directum', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(result.message || 'Ошибка отправки в Directum');
+            }
+
+            if (result.success) {
+                this.showNotification('Документы успешно отправлены в Directum', 'success');
+                // Дополнительные действия при успешной отправке
+                if (result.document_numbers) {
+                    this.showNotification(`Созданы документы: ${result.document_numbers.join(', ')}`, 'info', 8000);
+                }
+            } else {
+                throw new Error(result.message || 'Неизвестная ошибка');
+            }
+*/
+        } catch (error) {
+            console.error('Directum send error:', error);
+            this.showNotification(`Ошибка отправки в Directum: ${error.message}`, 'error');
+        } finally {
+            // Восстанавливаем кнопку
+            directumBtn.disabled = false;
+            directumBtn.innerHTML = originalHtml;
+        }
+    }
+
+    hideActionButtons() {
+        const actionButtons = document.getElementById('action-buttons-container');
+        if (actionButtons) {
+            actionButtons.remove();
         }
     }
 

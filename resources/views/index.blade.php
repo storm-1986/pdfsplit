@@ -76,7 +76,7 @@
                         <option value="">Выберите контрагента</option>
                         @foreach($counterparties as $counterparty)
                             <option value="{{ $counterparty['kpl'] }}" data-name="{{ $counterparty['name'] }}">
-                                {{ $counterparty['name'] }} ({{ $counterparty['kpl'] }})
+                                {{ $counterparty['name'] }} ({{ $counterparty['krkpl'] }})
                             </option>
                         @endforeach
                     </select>
