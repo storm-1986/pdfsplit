@@ -19,3 +19,4 @@ Route::post('/upload-additional', [PdfSplitterController::class, 'uploadAddition
 Route::post('/pdf/cleanup', [PdfSplitterController::class, 'cleanup'])->name('pdf.cleanup');
 Route::post('/pdf/download-ranges', [PdfSplitterController::class, 'downloadRanges'])->name('pdf.download-ranges');
 Route::post('/upload-from-url', [PdfSplitterController::class, 'uploadFromUrl'])->name('pdf.upload.url');
+Route::post('/get-system-number', [PdfSplitterController::class, 'getSystemNumber']);

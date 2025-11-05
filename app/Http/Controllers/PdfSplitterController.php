@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use DateTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -62,6 +63,88 @@ class PdfSplitterController extends Controller
             Log::error($ipAddress . ' Ошибка при загрузке контрагентов: ' . $e->getMessage());
             return [];
         }
+    }
+
+    public function getSystemNumber(Request $request)
+    {
+        $request->validate([
+            'kpl' => 'required|string',
+            'document_type' => 'required|string'
+        ]);
+
+        $ipAddress = $request->ip();
+        
+        try {
+            $response = Http::withOptions([
+                'verify' => false,
+            ])->withHeaders([
+                'Authorization' => 'Bearer ' . $this->bearerToken,
+                'Content-Type' => 'application/json',
+            ])->timeout(30)->withBody(json_encode([
+                'kpl' => $request->input('kpl'),
+                'type' => $request->input('document_type')
+            ]), 'application/json')->post('https://edi1.savushkin.com:5050/web/docs/client/documents');
+            
+            if ($response->successful()) {
+                $documents = $response->json();
+                
+                // Форматируем системный номер из документов
+                $systemNumbers = $this->formatSystemNumber($documents);
+                
+                return response()->json([
+                    'success' => true,
+                    'system_numbers' => $systemNumbers
+                ]);
+            }
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Не удалось получить данные о документах'
+            ], 500);
+            
+        } catch (\Exception $e) {
+            \Log::error($ipAddress . ' System number fetch failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Ошибка получения системного номера: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function formatSystemNumber($documents)
+    {
+        if (empty($documents)) {
+            return [];
+        }
+        
+        foreach ($documents as $document) {
+            if (isset($document['dt']) && isset($document['nd']) && isset($document['snd'])) {
+                $formattedDate = $this->formatDate($document['dt']);
+                $formattedNumbers[] = [
+                    'display_text' => $document['nd'] . ' от ' . $formattedDate,
+                    'snd' => $document['snd'],
+                    'dt' => $document['dt'],
+                    'nd' => $document['nd']
+                ];
+            }
+        }
+        
+        return $formattedNumbers;
+    }
+
+    private function formatDate($dateString)
+    {
+        try {
+            $date = DateTime::createFromFormat('Y-m-d', $dateString);
+            if ($date) {
+                return $date->format('d-m-Y');
+            }
+        } catch (\Exception $e) {
+            // Если не удалось преобразовать, возвращаем как есть
+        }
+        
+        return $dateString;
     }
 
     /**

@@ -1280,7 +1280,7 @@ class PdfSplitter {
                 </button>
             </div>
             <div class="flex items-center space-x-3 mb-2">
-                <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer">
+                <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer w-48">
                     <option value="14" ${selectedType === '14' ? 'selected' : ''}>Протокол к договору</option>
                     <option value="15" ${selectedType === '15' ? 'selected' : ''}>Приложение к договору</option>
                     <option value="16" ${selectedType === '16' ? 'selected' : ''}>Доп.соглашение</option>
@@ -1288,7 +1288,12 @@ class PdfSplitter {
                     <option value="93" ${selectedType === '93' ? 'selected' : ''}>Письма</option>
                     <option value="134" ${selectedType === '134' ? 'selected' : ''}>Прочие документы</option>
                 </select>
-                <input type="text" class="system-number border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full sm:w-32 md:w-35" placeholder="Системный номер">
+                <div class="system-number-container relative flex-1 w-40">
+                    <input type="text" 
+                        class="system-number-search border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full" 
+                        placeholder="Системный номер">
+                    <div class="system-number-results absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg hidden max-h-60 overflow-y-auto mt-1"></div>
+                </div>
             </div>
             <div class="flex items-center space-x-3">
                 <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
@@ -1315,35 +1320,179 @@ class PdfSplitter {
         // Обработчики изменений
         const fromInput = rangeElement.querySelector('.from-input');
         const toInput = rangeElement.querySelector('.to-input');
-        
+        const documentTypeSelect = rangeElement.querySelector('.document-type');
+        const documentNameInput = rangeElement.querySelector('.document-name');
+
         fromInput.addEventListener('change', () => {
             this.adjustRangesAfterManualEdit(rangeElement);
-            this.sortRangesByPages(); // Сортируем по страницам
+            this.sortRangesByPages();
             this.updateThumbnailsHighlight();
         });
 
         toInput.addEventListener('change', () => {
             this.adjustRangesAfterManualEdit(rangeElement);
-            this.sortRangesByPages(); // Сортируем по страницам
+            this.sortRangesByPages();
             this.updateThumbnailsHighlight();
         });
 
-        // ДОБАВЛЯЕМ: Обработчик изменения названия документа
-        const documentNameInput = rangeElement.querySelector('.document-name');
-        const documentTypeSelect = rangeElement.querySelector('.document-type');
-        
+        this.initSystemNumberSelect(rangeElement);
+
+        // Обработчик изменения названия документа
         documentNameInput.addEventListener('input', (e) => {
             this.updateDocumentTypeBasedOnName(e.target.value, documentTypeSelect);
         });
-
         documentNameInput.addEventListener('change', (e) => {
             this.updateDocumentTypeBasedOnName(e.target.value, documentTypeSelect);
+        });
+
+        // Обработчик изменения типа документа
+        documentTypeSelect.addEventListener('change', async (e) => {
+            await this.handleDocumentTypeChange(e.target, rangeElement);
         });
 
         this.rangesContainer.appendChild(rangeElement);
         this.sortRangesByPages(); // Сортируем по страницам
         this.updateRemoveButtonsVisibility();
         this.updateThumbnailsHighlight();
+    }
+
+    initSystemNumberSelect(rangeElement) {
+        const systemNumberSearch = rangeElement.querySelector('.system-number-search');
+        const systemNumberResults = rangeElement.querySelector('.system-number-results');
+
+        // Храним опции для этого диапазона
+        rangeElement.systemNumberOptions = [];
+        
+        let preventAutoOpen = false;
+
+        // Показываем список при фокусе (даже если поле пустое)
+        systemNumberSearch.addEventListener('focus', () => {
+            if (!preventAutoOpen) {
+                this.showSystemNumberResults(rangeElement);
+            }
+            preventAutoOpen = false;
+        });
+
+        // Показываем список при клике (даже если поле пустое)
+        systemNumberSearch.addEventListener('click', () => {
+            this.showSystemNumberResults(rangeElement);
+        });
+
+        // Обработка ввода - фильтруем результаты
+        systemNumberSearch.addEventListener('input', (e) => {
+            this.filterSystemNumberResults(rangeElement, e.target.value);
+        });
+
+        // Обработка клавиш
+        systemNumberSearch.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.hideSystemNumberResults(rangeElement);
+                return;
+            }
+            
+            // Показываем список при Backspace, Delete (даже если поле стало пустым)
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                setTimeout(() => {
+                    this.showSystemNumberResults(rangeElement);
+                }, 10);
+            }
+        });
+
+        // Обработка клика вне - скрываем результаты
+        document.addEventListener('click', (e) => {
+            const container = rangeElement.querySelector('.system-number-container');
+            if (!container.contains(e.target)) {
+                this.hideSystemNumberResults(rangeElement);
+            }
+        });
+
+        // Предотвращаем скрытие при клике внутри результатов
+        systemNumberResults.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+        });
+        
+        rangeElement.preventSystemNumberAutoOpen = () => {
+            preventAutoOpen = true;
+        };
+    }
+
+    // Обновляем showSystemNumberResults чтобы показывать все варианты при пустом поле
+    showSystemNumberResults(rangeElement) {
+        const systemNumberResults = rangeElement.querySelector('.system-number-results');
+        const systemNumberSearch = rangeElement.querySelector('.system-number-search');
+        
+        // Всегда используем текущий текст из поля для фильтрации
+        // Если поле пустое - покажем все доступные варианты
+        const currentSearchTerm = systemNumberSearch.value;
+        this.populateSystemNumberResults(rangeElement, currentSearchTerm);
+        systemNumberResults.classList.remove('hidden');
+    }
+
+    showSystemNumberResults(rangeElement) {
+        const systemNumberResults = rangeElement.querySelector('.system-number-results');
+        const systemNumberSearch = rangeElement.querySelector('.system-number-search');
+        
+        // Используем текущий текст из поля для фильтрации
+        const currentSearchTerm = systemNumberSearch.value;
+        this.populateSystemNumberResults(rangeElement, currentSearchTerm);
+        systemNumberResults.classList.remove('hidden');
+    }
+
+    hideSystemNumberResults(rangeElement) {
+        const systemNumberResults = rangeElement.querySelector('.system-number-results');
+        systemNumberResults.classList.add('hidden');
+    }
+
+    filterSystemNumberResults(rangeElement, searchTerm) {
+        this.populateSystemNumberResults(rangeElement, searchTerm);
+    }
+
+    populateSystemNumberResults(rangeElement, searchTerm) {
+        const systemNumberResults = rangeElement.querySelector('.system-number-results');
+        const options = rangeElement.systemNumberOptions || [];
+        const searchLower = searchTerm.toLowerCase();
+
+        systemNumberResults.innerHTML = '';
+
+        const filteredOptions = searchLower === '' 
+            ? options
+            : options.filter(opt => {
+                const matches = opt.display_text.toLowerCase().includes(searchLower) ||
+                            opt.snd.toString().includes(searchTerm);
+                return matches;
+            });
+
+        filteredOptions.forEach(option => {
+            const resultItem = document.createElement('div');
+            resultItem.className = 'px-3 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0';
+            resultItem.innerHTML = `
+                <div class="text-sm font-medium">${option.display_text}</div>
+                <div class="text-xs text-gray-500">ID: ${option.snd}</div>
+            `;
+            
+            resultItem.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.selectSystemNumber(rangeElement, option);
+            });
+
+            systemNumberResults.appendChild(resultItem);
+        });
+
+        if (filteredOptions.length === 0) {
+            const noResults = document.createElement('div');
+            noResults.className = 'px-3 py-2 text-gray-500 text-sm';
+            noResults.textContent = options.length === 0 ? 'Системные номера не загружены' : 'Ничего не найдено';
+            systemNumberResults.appendChild(noResults);
+        }
+    }
+
+    selectSystemNumber(rangeElement, option) {
+        const systemNumberSearch = rangeElement.querySelector('.system-number-search');
+        systemNumberSearch.value = option.display_text;
+        systemNumberSearch.dataset.snd = option.snd;
+        
+        this.hideSystemNumberResults(rangeElement);
+        systemNumberSearch.focus();
     }
 
     showNotification(message, type = 'info', duration = 5000) {
@@ -1821,7 +1970,7 @@ class PdfSplitter {
             const toInput = rangeEl.querySelector('.to-input');
             const nameInput = rangeEl.querySelector('.document-name');
             const typeSelect = rangeEl.querySelector('.document-type');
-            const systemNumberInput = rangeEl.querySelector('.system-number');
+            const systemNumberInput = rangeEl.querySelector('.system-number-search');
             
             const from = parseInt(fromInput.value);
             const to = parseInt(toInput.value);
@@ -1951,7 +2100,7 @@ class PdfSplitter {
         }
     }
 
-    selectCounterparty(option) {
+    async selectCounterparty(option) {
         this.counterpartySearch.value = option.text;
         this.selectedCounterparty = {
             kpl: option.value,
@@ -1960,6 +2109,9 @@ class PdfSplitter {
         
         // Скрываем результаты после выбора
         this.hideResults();
+        
+        // Автоматически заполняем системные номера для всех диапазонов с типом "Договор"
+        await this.updateSystemNumbersForContractRanges();
         
         // Фокус остается на поле поиска для возможного редактирования
         this.counterpartySearch.focus();
@@ -1970,6 +2122,88 @@ class PdfSplitter {
 
     getSelectedCounterparty() {
         return this.selectedCounterparty;
+    }
+
+    async fetchSystemNumber(counterpartyKpl, documentType) {
+        try {
+            const response = await fetch('/get-system-number', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    kpl: counterpartyKpl,
+                    document_type: documentType
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Ошибка сервера');
+            }
+
+            const result = await response.json();
+            
+            if (result.success) {
+                return result.system_numbers;
+            } else {
+                throw new Error(result.message || 'Системный номер не найден');
+            }
+
+        } catch (error) {
+            console.error('Error fetching system number:', error);
+            this.showNotification(`Ошибка получения системного номера: ${error.message}`, 'error');
+            return null;
+        }
+    }
+
+    async updateSystemNumbersForContractRanges() {
+        if (!this.selectedCounterparty) return;
+
+        const rangeElements = this.rangesContainer.children;
+        
+        for (let rangeElement of rangeElements) {
+            await this.updateSystemNumberForRange(rangeElement);
+        }
+    }
+
+    async handleDocumentTypeChange(typeSelect, rangeElement) {
+        await this.updateSystemNumberForRange(rangeElement, typeSelect.value);
+    }
+
+    async updateSystemNumberForRange(rangeElement, documentType = null) {
+        const documentTypeSelect = rangeElement.querySelector('.document-type');
+        const systemNumberSearch = rangeElement.querySelector('.system-number-search');
+        
+        const currentDocumentType = documentType || documentTypeSelect.value;
+        
+        if (!this.selectedCounterparty) {
+            systemNumberSearch.value = '';
+            systemNumberSearch.dataset.snd = '';
+            rangeElement.systemNumberOptions = [];
+            return;
+        }
+
+        // Предотвращаем автоматическое открытие списка
+        if (rangeElement.preventSystemNumberAutoOpen) {
+            rangeElement.preventSystemNumberAutoOpen();
+        }
+
+        // Получаем системные номера
+        const systemNumbers = await this.fetchSystemNumber(this.selectedCounterparty.kpl, currentDocumentType);
+        
+        // Сохраняем опции для этого диапазона
+        rangeElement.systemNumberOptions = systemNumbers || [];
+        
+        // ПОДСТАВЛЯЕМ ПЕРВОЕ ЗНАЧЕНИЕ
+        if (systemNumbers && systemNumbers.length > 0) {
+            this.selectSystemNumber(rangeElement, systemNumbers[0]);
+            this.showTypeChangeFeedback(systemNumberSearch);
+        } else {
+            systemNumberSearch.value = '';
+            systemNumberSearch.dataset.snd = '';
+        }
     }
 }
 
