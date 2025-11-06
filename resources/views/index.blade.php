@@ -37,8 +37,8 @@
         <div class="flex space-x-3">
             <!-- Кнопка добавления файлов -->
             <button type="button" id="addMoreFiles" title="Добавить файлы"
-                    class="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium cursor-pointer">
-                <span>➕</span>
+                    class="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium cursor-pointer">
+                <span class="text-xl font-bold h-5 flex items-center">+</span>
             </button>
             <input type="file" id="additionalFiles" class="hidden" multiple accept=".pdf,.msg">
             
