@@ -1747,6 +1747,11 @@ class PdfSplitter {
 
     async handleSplit() {
         const selectedCounterparty = this.getSelectedCounterparty();
+        
+        if (!selectedCounterparty) {
+            this.showNotification('Пожалуйста, выберите контрагента', 'error');
+            return;
+        }
         const originalHtml = this.splitButton.innerHTML;
         this.splitButton.disabled = true;
         this.splitButton.innerHTML = `
@@ -1798,7 +1803,7 @@ class PdfSplitter {
             if (!response.ok) throw new Error(data.message || 'Ошибка сервера');
             
             // Передаем ranges в showDownloadButton
-            this.showDownloadButton(data.download_url, data.filename, ranges);
+            this.showDownloadButton(data.download_url, data.filename, ranges, data.session_id);
 
         } catch (error) {
             this.showSplitError(error.message);
@@ -1808,7 +1813,7 @@ class PdfSplitter {
         }
     }
 
-    showDownloadButton(downloadUrl, filename, ranges) {
+    showDownloadButton(downloadUrl, filename, ranges, sessionId) {
         // Удаляем предыдущие кнопки
         const oldDownloadBtn = document.getElementById('download-button-container');
         if (oldDownloadBtn) oldDownloadBtn.remove();
@@ -1848,7 +1853,7 @@ class PdfSplitter {
 
         // Обработчик для кнопки Архив
         archiveBtn.addEventListener('click', () => {
-            this.sendToArchive(ranges, downloadUrl);
+            this.sendToArchive(ranges, sessionId);
         });
 
         // Добавляем кнопки в контейнер
@@ -1859,7 +1864,7 @@ class PdfSplitter {
         this.splitButton.insertAdjacentElement('afterend', buttonsContainer);
     }
 
-    async sendToArchive(ranges, downloadUrl) {
+    async sendToArchive(ranges, sessionId) {
         const selectedCounterparty = this.getSelectedCounterparty();
         
         if (!selectedCounterparty) {
@@ -1880,47 +1885,40 @@ class PdfSplitter {
                 </svg>
                 Отправка...
             `;
-/*
-            // Скачиваем ZIP-архив
-            const zipResponse = await fetch(downloadUrl);
-            const zipBlob = await zipResponse.blob();
 
-            // Создаем FormData для отправки
-            const formData = new FormData();
-            formData.append('zip_file', zipBlob, 'documents.zip');
-            formData.append('counterparty_kpl', selectedCounterparty.kpl);
-            formData.append('counterparty_name', selectedCounterparty.name);
-            formData.append('ranges', JSON.stringify(ranges));
-
-            // Отправляем в Архив
+            // Отправляем на наш бэкенд
             const response = await fetch('/send-to-archive', {
                 method: 'POST',
                 headers: {
+                    'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
                     'Accept': 'application/json'
                 },
-                body: formData
+                body: JSON.stringify({
+                    session_id: sessionId,
+                    counterparty: selectedCounterparty,
+                    ranges: ranges
+                })
             });
 
             const result = await response.json();
             
             if (!response.ok) {
-                throw new Error(result.message || 'Ошибка отправки в Архив');
+                throw new Error(result.message || 'Ошибка отправки в архив');
             }
 
             if (result.success) {
-                this.showNotification('Документы успешно отправлены в Архив', 'success');
-                // Дополнительные действия при успешной отправке
-                if (result.document_numbers) {
+                this.showNotification('Документы успешно отправлены в архив', 'success');
+                if (result.document_numbers && result.document_numbers.length > 0) {
                     this.showNotification(`Созданы документы: ${result.document_numbers.join(', ')}`, 'info', 8000);
                 }
             } else {
                 throw new Error(result.message || 'Неизвестная ошибка');
             }
-*/
+
         } catch (error) {
             console.error('Archive send error:', error);
-            this.showNotification(`Ошибка отправки в Архив: ${error.message}`, 'error');
+            this.showNotification(`Ошибка отправки в архив: ${error.message}`, 'error');
         } finally {
             // Восстанавливаем кнопку
             archiveBtn.disabled = false;
@@ -1970,14 +1968,14 @@ class PdfSplitter {
             const toInput = rangeEl.querySelector('.to-input');
             const nameInput = rangeEl.querySelector('.document-name');
             const typeSelect = rangeEl.querySelector('.document-type');
-            const systemNumberInput = rangeEl.querySelector('.system-number-search');
+            const systemNumberSearch = rangeEl.querySelector('.system-number-search');
             
             const from = parseInt(fromInput.value);
             const to = parseInt(toInput.value);
             const name = nameInput.value.trim();
             const type = typeSelect.value;
-            const systemNumber = systemNumberInput.value.trim();
-            
+            const systemNumber = systemNumberSearch.dataset.snd;
+
             if (!isNaN(from) && !isNaN(to) && from <= to) {
                 ranges.push({
                     range: `${from}-${to}`,

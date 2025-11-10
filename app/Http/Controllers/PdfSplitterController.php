@@ -635,26 +635,23 @@ class PdfSplitterController extends Controller
             Storage::makeDirectory('temp_split');
             Storage::disk('public')->makeDirectory('temp_zips');
             
-            $zipPath = storage_path("app/public/temp_zips/" . Str::uuid() . ".zip");
+            $sessionId = Str::uuid();
+            $zipPath = storage_path("app/public/temp_zips/" . $sessionId . ".zip");
             $zip = new ZipArchive();
             
             if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
                 throw new \Exception("Не удалось создать ZIP-архив");
             }
 
-            // Используем pdftk для быстрого извлечения страниц
+            // Создаем PDF файлы для каждого диапазона
             foreach ($validated['ranges'] as $rangeData) {
                 $pages = $this->parseRange($rangeData['range'], $this->getTotalPages($validated['documents'], $ipAddress));
                 $fileName = $this->sanitizeFilename($rangeData['name']) . '.pdf';
                 $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
 
                 if ($this->isPdftkAvailable($ipAddress)) {
-                    // Быстрый метод с pdftk
-                    Log::info($ipAddress . ' Using PDFTK for fast PDF processing');
                     $this->extractPagesWithPdftk($validated['documents'], $pages, $tempPdfPath);
                 } else {
-                    // Резервный медленный метод
-                    Log::warning($ipAddress . 'PDFTK not available, using fallback Imagick method');
                     $this->extractPagesWithImagick($validated['documents'], $pages, $tempPdfPath);
                 }
                 
@@ -669,7 +666,8 @@ class PdfSplitterController extends Controller
             return response()->json([
                 'success' => true,
                 'download_url' => asset("storage/temp_zips/" . basename($zipPath)),
-                'filename' => "ranges_" . date('Ymd_His') . ".zip"
+                'filename' => "ranges_" . date('Ymd_His') . ".zip",
+                'session_id' => $sessionId
             ]);
 
         } catch (\Exception $e) {
@@ -906,6 +904,136 @@ class PdfSplitterController extends Controller
         }
         
         return array_unique($pages);
+    }
+
+    public function sendToArchive(Request $request)
+    {
+        $request->validate([
+            'session_id' => 'required|string',
+            'counterparty' => 'required|array',
+            'ranges' => 'required|array',
+            'ranges.*.type' => 'required|string',
+            'ranges.*.systemNumber' => 'nullable|string',
+            'ranges.*.name' => 'required|string',
+        ]);
+
+        $ipAddress = $request->ip();
+        
+        try {
+            $sessionId = $request->input('session_id');
+            $counterparty = $request->input('counterparty');
+            $ranges = $request->input('ranges');
+
+            // Получаем ZIP файл
+            $zipPath = storage_path("app/public/temp_zips/" . $sessionId . ".zip");
+            
+            if (!file_exists($zipPath)) {
+                throw new \Exception('ZIP файл не найден');
+            }
+
+            // Создаем временную директорию для распаковки
+            $tempExtractPath = storage_path("app/temp_extract/" . $sessionId);
+            if (!file_exists($tempExtractPath)) {
+                mkdir($tempExtractPath, 0755, true);
+            }
+
+            // Разархивируем ZIP
+            $zip = new ZipArchive();
+            if ($zip->open($zipPath) === TRUE) {
+                $zip->extractTo($tempExtractPath);
+                $zip->close();
+            } else {
+                throw new \Exception('Не удалось открыть ZIP архив');
+            }
+
+            // Получаем все PDF файлы из распакованного архива
+            $pdfFiles = glob($tempExtractPath . '/*.pdf');
+            
+            if (empty($pdfFiles)) {
+                throw new \Exception('PDF файлы не найдены в архиве');
+            }
+
+            // Создаем массив для сопоставления имен файлов с диапазонами
+            $fileMap = [];
+            foreach ($ranges as $range) {
+                $expectedFileName = $this->sanitizeFilename($range['name']) . '.pdf';
+                $fileMap[$expectedFileName] = $range;
+            }
+
+            // Отправляем каждый документ в архив
+            $results = [];
+            foreach ($pdfFiles as $pdfFile) {
+                $fileName = basename($pdfFile);
+                
+                if (isset($fileMap[$fileName])) {
+                    $rangeData = $fileMap[$fileName];
+                    $result = $this->sendDocumentToArchive($rangeData, $counterparty, $pdfFile);
+                    $results[] = $result;
+                }
+            }
+
+            // Очищаем временную директорию распаковки
+            array_map('unlink', glob($tempExtractPath . '/*'));
+            rmdir($tempExtractPath);
+
+            $successful = count(array_filter($results, fn($r) => $r['success']));
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Отправлено {$successful} из " . count($results) . " документов",
+                'document_numbers' => array_column(array_filter($results, fn($r) => $r['success']), 'document_number')
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error($ipAddress . ' Archive send failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Ошибка отправки в архив: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function sendDocumentToArchive($rangeData, $counterparty, $pdfFilePath)
+    {
+        try {
+            // Читаем PDF файл и кодируем в base64
+            $pdfContent = file_get_contents($pdfFilePath);
+            $base64Pdf = base64_encode($pdfContent);
+
+            $response = Http::withOptions([
+                'verify' => false,
+            ])->withHeaders([
+                'Authorization' => 'Bearer ' . $this->bearerToken,
+                'Content-Type' => 'application/json',
+            ])->timeout(30)->withBody(json_encode([
+                'type' => $rangeData['type'],
+                'snd' => $rangeData['systemNumber'],
+                'kpl' => $counterparty['kpl'],
+                'file' => $base64Pdf,
+                'extension' => 'pdf'
+            ]), 'application/json')->post('https://edi1.savushkin.com:5050/web/docs/directum/add');
+            
+            if ($response->successful()) {
+                $result = $response->json();
+                // Используем id из ответа как document_number
+                return [
+                    'success' => true,
+                    'document_number' => $result['id'] ?? 'unknown' // Берем id
+                ];
+            }
+            
+            return [
+                'success' => false,
+                'error' => 'HTTP error: ' . $response->status()
+            ];
+            
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage()
+            ];
+        }
     }
 
     public function cleanup($sessionId)
