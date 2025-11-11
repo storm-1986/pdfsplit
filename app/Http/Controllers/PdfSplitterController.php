@@ -961,27 +961,31 @@ class PdfSplitterController extends Controller
             }
 
             // Отправляем каждый документ в архив
-            $results = [];
+            $documentIds = [];
+            $documentNumbers = [];
             foreach ($pdfFiles as $pdfFile) {
                 $fileName = basename($pdfFile);
-                
                 if (isset($fileMap[$fileName])) {
                     $rangeData = $fileMap[$fileName];
                     $result = $this->sendDocumentToArchive($rangeData, $counterparty, $pdfFile);
-                    $results[] = $result;
+                    
+                    if ($result['success'] && isset($result['document_number'])) {
+                        $documentIds[] = $result['document_number'];
+                        $documentNumbers[] = $result['document_number'];
+                    }
                 }
             }
 
             // Очищаем временную директорию распаковки
             array_map('unlink', glob($tempExtractPath . '/*'));
             rmdir($tempExtractPath);
-
-            $successful = count(array_filter($results, fn($r) => $r['success']));
             
             return response()->json([
                 'success' => true,
-                'message' => "Отправлено {$successful} из " . count($results) . " документов",
-                'document_numbers' => array_column(array_filter($results, fn($r) => $r['success']), 'document_number')
+                'message' => "Отправлено " . count($documentIds) . " документов в архив",
+                'document_numbers' => $documentNumbers,
+                'document_ids' => $documentIds, // Возвращаем ID для отслеживания
+                'session_id' => $sessionId
             ]);
 
         } catch (\Exception $e) {
@@ -994,10 +998,71 @@ class PdfSplitterController extends Controller
         }
     }
 
+    // Новый метод для проверки статуса нескольких документов
+    public function checkArchiveStatus(Request $request)
+    {
+        $request->validate([
+            'document_ids' => 'required|array',
+            'document_ids.*' => 'required|integer'
+        ]);
+
+        $documentIds = $request->input('document_ids');
+        $documentStatuses = [];
+
+        try {
+            // Проверяем статус каждого документа через API
+            foreach ($documentIds as $docId) {
+                $status = $this->checkDocumentStatusViaApi($docId);
+                $documentStatuses[] = [
+                    'id' => $docId,
+                    'pst' => $status
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'documents_status' => $documentStatuses
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Status check failed: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Ошибка проверки статуса'
+            ], 500);
+        }
+    }
+
+    // Проверка статуса через API архива
+    private function checkDocumentStatusViaApi($documentId)
+    {
+        try {
+            $response = Http::withOptions([
+                'verify' => false,
+            ])->withHeaders([
+                'Authorization' => 'Bearer ' . $this->bearerToken,
+                'Content-Type' => 'application/json',
+            ])->timeout(10)->withBody(json_encode([
+                'id' => $documentId
+            ]), 'application/json')->post('https://edi1.savushkin.com:5050/web/docs/directum/status');
+            
+            if ($response->successful()) {
+                $result = $response->json();
+                return $result['pst'] ?? 0;
+            }
+            
+            return 0;
+            
+        } catch (\Exception $e) {
+            \Log::error("Status check failed for document {$documentId}: " . $e->getMessage());
+            return 0;
+        }
+    }
+
     private function sendDocumentToArchive($rangeData, $counterparty, $pdfFilePath)
     {
         try {
-            // Читаем PDF файл и кодируем в base64
             $pdfContent = file_get_contents($pdfFilePath);
             $base64Pdf = base64_encode($pdfContent);
 
@@ -1008,7 +1073,7 @@ class PdfSplitterController extends Controller
                 'Content-Type' => 'application/json',
             ])->timeout(30)->withBody(json_encode([
                 'type' => $rangeData['type'],
-                'snd' => $rangeData['systemNumber'],
+                'snd' => $rangeData['systemNumber'] ?? '',
                 'kpl' => $counterparty['kpl'],
                 'file' => $base64Pdf,
                 'extension' => 'pdf'
@@ -1016,10 +1081,9 @@ class PdfSplitterController extends Controller
             
             if ($response->successful()) {
                 $result = $response->json();
-                // Используем id из ответа как document_number
                 return [
                     'success' => true,
-                    'document_number' => $result['id'] ?? 'unknown' // Берем id
+                    'document_number' => $result['id'] // Возвращаем ID для отслеживания
                 ];
             }
             

@@ -11,6 +11,7 @@ class PdfSplitter {
         this.rangesContainer = document.getElementById('ranges-container');
         this.addRangeBtn = document.getElementById('add-range');
         this.splitButton = document.getElementById('split-button');
+        this.documentStatuses = new Map(); // Храним статусы документов
 
         this.counterpartySelect = document.getElementById('counterparty-select');
         this.selectedCounterparty = null;
@@ -1268,17 +1269,21 @@ class PdfSplitter {
         const newName = fileName || `Документ ${docNumber}`;
         
         rangeElement.innerHTML = `
+            <!-- Верхняя строка с названием документа и индикатором статуса -->
             <div class="flex justify-between items-center mb-2">
-                <input type="text" 
-                    value="${newName}" 
-                    class="document-name border rounded px-2 py-1 w-87 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Название документа">
-                <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                    </svg>
-                </button>
+                <div class="flex items-center gap-2 flex-1">
+                    <input type="text" 
+                        value="${newName}" 
+                        class="document-name border rounded px-2 py-1 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex-1"
+                        placeholder="Название документа">
+                    <!-- Индикатор статуса рядом с названием -->
+                    <div class="flex-shrink-0">
+                        <div id="status-indicator-${docNumber}" class="status-indicator w-4 h-4 bg-gray-400 rounded-full border-2 border-white shadow" title="Статус не определен"></div>
+                    </div>
+                </div>
             </div>
+
+            <!-- Строка с типом документа и системным номером -->
             <div class="flex items-center space-x-3 mb-2">
                 <select class="document-type border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 cursor-pointer w-48">
                     <option value="14" ${selectedType === '14' ? 'selected' : ''}>Протокол к договору</option>
@@ -1295,13 +1300,25 @@ class PdfSplitter {
                     <div class="system-number-results absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg hidden max-h-60 overflow-y-auto mt-1"></div>
                 </div>
             </div>
-            <div class="flex items-center space-x-3">
+
+            <!-- Строка со страницами -->
+            <div class="flex items-center space-x-3 mb-2">
                 <span class="text-gray-700 whitespace-nowrap text-sm">Страницы</span>
                 <input type="number" min="1" max="${this.totalPages}" value="${from}" 
                     class="range-input from-input w-16 px-2 py-1 border rounded text-sm">
                 <span class="text-gray-700 whitespace-nowrap text-sm">—</span>
                 <input type="number" min="1" max="${this.totalPages}" value="${to}" 
                     class="range-input to-input w-16 px-2 py-1 border rounded text-sm">
+            </div>
+
+            <!-- Кнопка удаления перенесена вниз -->
+            <div class="flex justify-end pt-2 border-t border-gray-200">
+                <button type="button" class="remove-range text-red-500 hover:text-red-700 cursor-pointer flex items-center text-sm">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                    Удалить
+                </button>
             </div>
         `;
 
@@ -1876,7 +1893,6 @@ class PdfSplitter {
         const originalHtml = archiveBtn.innerHTML;
         
         try {
-            // Показываем индикатор загрузки
             archiveBtn.disabled = true;
             archiveBtn.innerHTML = `
                 <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1886,7 +1902,6 @@ class PdfSplitter {
                 Отправка...
             `;
 
-            // Отправляем на наш бэкенд
             const response = await fetch('/send-to-archive', {
                 method: 'POST',
                 headers: {
@@ -1907,22 +1922,162 @@ class PdfSplitter {
                 throw new Error(result.message || 'Ошибка отправки в архив');
             }
 
-            if (result.success) {
-                this.showNotification('Документы успешно отправлены в архив', 'success');
-                if (result.document_numbers && result.document_numbers.length > 0) {
-                    this.showNotification(`Созданы документы: ${result.document_numbers.join(', ')}`, 'info', 8000);
-                }
+        if (result.success) {
+            this.showNotification('Документы поставлены в очередь', 'success');
+            
+            // Сохраняем ID документов для отслеживания
+            if (result.document_ids && result.document_ids.length > 0) {
+                this.saveDocumentStatuses(result.document_ids, ranges);
+                
+                // Сохраняем ссылку на кнопку для последующего обновления
+                this.archiveButton = archiveBtn;
+                this.archiveButtonOriginalHtml = originalHtml;
+                
+                // Запускаем отслеживание статуса
+                this.startStatusTracking(result.document_ids);
             } else {
-                throw new Error(result.message || 'Неизвестная ошибка');
+                // Если нет document_ids, восстанавливаем кнопку сразу
+                this.restoreArchiveButton();
             }
+        } else {
+            throw new Error(result.message || 'Неизвестная ошибка');
+        }
 
         } catch (error) {
             console.error('Archive send error:', error);
             this.showNotification(`Ошибка отправки в архив: ${error.message}`, 'error');
-        } finally {
-            // Восстанавливаем кнопку
-            archiveBtn.disabled = false;
-            archiveBtn.innerHTML = originalHtml;
+            this.restoreArchiveButton();
+        }
+    }
+
+    // Восстанавливаем кнопку архива
+    restoreArchiveButton() {
+        if (this.archiveButton && this.archiveButtonOriginalHtml) {
+            this.archiveButton.disabled = false;
+            this.archiveButton.innerHTML = this.archiveButtonOriginalHtml;
+            this.archiveButton = null;
+            this.archiveButtonOriginalHtml = null;
+        }
+    }
+
+    // Сохраняем статусы документов на фронтенде
+    saveDocumentStatuses(documentIds, ranges) {
+        // Очищаем предыдущие статусы
+        this.documentStatuses.clear();
+        
+        // Инициализируем статусы для каждого документа
+        documentIds.forEach((docId, index) => {
+            // Получаем номер документа из соответствующего диапазона
+            const rangeElement = this.rangesContainer.children[index];
+            const docNumber = rangeElement ? rangeElement.getAttribute('data-doc-number') : index + 1;
+            
+            this.documentStatuses.set(docId, {
+                id: docId,
+                pst: 0, // начальный статус - в очереди (красный)
+                name: ranges[index]?.name || `Документ ${index + 1}`,
+                docNumber: docNumber
+            });
+        });
+        
+        // Сразу обновляем индикаторы (все красные - в очереди)
+        this.updateAllStatusIndicators();
+    }
+
+    // Запускаем отслеживание статуса
+    async startStatusTracking(documentIds) {
+        // Останавливаем предыдущее отслеживание если было
+        if (this.statusCheckInterval) {
+            clearInterval(this.statusCheckInterval);
+        }
+        
+        // Запускаем периодическую проверку
+        this.statusCheckInterval = setInterval(async () => {
+            await this.checkDocumentsStatus(documentIds);
+        }, 2000); // Каждые 2 секунды
+        
+        // Первая проверка через 2 секунды
+        setTimeout(async () => {
+            await this.checkDocumentsStatus(documentIds);
+        }, 2000);
+    }
+
+    // Проверка статуса документов
+    async checkDocumentsStatus(documentIds) {
+        try {
+            const response = await fetch('/check-archive-status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    document_ids: Array.from(documentIds)
+                })
+            });
+
+            const data = await response.json();
+            
+            if (data.success && data.documents_status) {
+                // Обновляем статусы
+                data.documents_status.forEach(docStatus => {
+                    if (this.documentStatuses.has(docStatus.id)) {
+                        const currentDoc = this.documentStatuses.get(docStatus.id);
+                        currentDoc.pst = docStatus.pst;
+                        this.documentStatuses.set(docStatus.id, currentDoc);
+                    }
+                });
+                
+                // Обновляем индикаторы
+                this.updateAllStatusIndicators();
+                
+                // Проверяем, все ли документы завершены (pst === 1)
+                const allCompleted = Array.from(this.documentStatuses.values()).every(doc => doc.pst === 1);
+                if (allCompleted) {
+                    // Останавливаем проверку статуса
+                    clearInterval(this.statusCheckInterval);
+                    this.statusCheckInterval = null;
+                    
+                    // Восстанавливаем кнопку архива
+                    this.restoreArchiveButton();
+                    
+                    this.showNotification('Все документы успешно отправлены в архив', 'success');
+                }
+            }
+        } catch (error) {
+            console.error('Status check error:', error);
+        }
+    }
+
+    // Обновляем все индикаторы статуса
+    updateAllStatusIndicators() {
+        Array.from(this.documentStatuses.values()).forEach(doc => {
+            this.updateStatusIndicator(doc.docNumber, doc.pst);
+        });
+    }
+
+    // Обновляем конкретный индикатор
+    updateStatusIndicator(docNumber, status) {
+        const indicator = document.getElementById(`status-indicator-${docNumber}`);
+        if (!indicator) return;
+        
+        // Обновляем цвет и подсказку в зависимости от статуса
+        switch(status) {
+            case 0: // В очереди - КРАСНЫЙ
+                indicator.className = 'status-indicator w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow';
+                indicator.title = 'В очереди на отправку';
+                break;
+            case 1: // Успешно отправлен - ЗЕЛЕНЫЙ
+                indicator.className = 'status-indicator w-4 h-4 bg-green-500 rounded-full border-2 border-white shadow';
+                indicator.title = 'Успешно отправлен в архив';
+                break;
+            case 2: // В процессе отправки - ЖЕЛТЫЙ
+                indicator.className = 'status-indicator w-4 h-4 bg-yellow-500 rounded-full border-2 border-white shadow';
+                indicator.title = 'В процессе отправки';
+                break;
+            default:
+                indicator.className = 'status-indicator w-4 h-4 bg-gray-400 rounded-full border-2 border-white shadow';
+                indicator.title = 'Статус не определен';
         }
     }
 

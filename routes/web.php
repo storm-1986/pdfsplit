@@ -21,3 +21,4 @@ Route::post('/pdf/download-ranges', [PdfSplitterController::class, 'downloadRang
 Route::post('/upload-from-url', [PdfSplitterController::class, 'uploadFromUrl'])->name('pdf.upload.url');
 Route::post('/get-system-number', [PdfSplitterController::class, 'getSystemNumber']);
 Route::post('/send-to-archive', [PdfSplitterController::class, 'sendToArchive']);
+Route::post('/check-archive-status', [PdfSplitterController::class, 'checkArchiveStatus']);
