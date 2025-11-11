@@ -989,7 +989,7 @@ class PdfSplitterController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \Log::error($ipAddress . ' Archive send failed: ' . $e->getMessage());
+            Log::error($ipAddress . ' Archive send failed: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
@@ -1025,7 +1025,7 @@ class PdfSplitterController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            \Log::error('Status check failed: ' . $e->getMessage());
+            Log::error('Status check failed: ' . $e->getMessage());
             
             return response()->json([
                 'success' => false,
@@ -1055,7 +1055,7 @@ class PdfSplitterController extends Controller
             return 0;
             
         } catch (\Exception $e) {
-            \Log::error("Status check failed for document {$documentId}: " . $e->getMessage());
+            Log::error("Status check failed for document {$documentId}: " . $e->getMessage());
             return 0;
         }
     }
@@ -1081,11 +1081,13 @@ class PdfSplitterController extends Controller
             
             if ($response->successful()) {
                 $result = $response->json();
+                Log::info('Документ отправлен в очередь: ' . $result['id'] . ', тип: ' . $rangeData['type'] . ', контрагент: ' . $counterparty['kpl']);
                 return [
                     'success' => true,
                     'document_number' => $result['id'] // Возвращаем ID для отслеживания
                 ];
             }
+            Log::error('Ошибка HTTP при отправке документа: ' . $response->status() . ', тип: ' . $rangeData['type'] . ', контрагент: ' . $counterparty['kpl']);
             
             return [
                 'success' => false,
@@ -1093,6 +1095,7 @@ class PdfSplitterController extends Controller
             ];
             
         } catch (\Exception $e) {
+            Log::error('Ошибка при отправке документа в очередь: ' . $e->getMessage() . ', тип: ' . $rangeData['type'] . ', контрагент: ' . $counterparty['kpl']);
             return [
                 'success' => false,
                 'error' => $e->getMessage()
