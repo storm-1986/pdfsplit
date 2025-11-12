@@ -1296,7 +1296,8 @@ class PdfSplitter {
                 <div class="system-number-container relative flex-1 w-40">
                     <input type="text" 
                         class="system-number-search border rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-500 w-full" 
-                        placeholder="Системный номер">
+                        placeholder="Документ"
+                        data-snd="">
                     <div class="system-number-results absolute z-50 w-full bg-white border border-gray-300 rounded-md shadow-lg hidden max-h-60 overflow-y-auto mt-1"></div>
                 </div>
             </div>
@@ -1377,6 +1378,10 @@ class PdfSplitter {
         const systemNumberSearch = rangeElement.querySelector('.system-number-search');
         const systemNumberResults = rangeElement.querySelector('.system-number-results');
 
+        // Очищаем поле при инициализации
+        systemNumberSearch.value = '';
+        systemNumberSearch.dataset.snd = '';
+        
         // Храним опции для этого диапазона
         rangeElement.systemNumberOptions = [];
         
@@ -1433,15 +1438,19 @@ class PdfSplitter {
         };
     }
 
-    // Обновляем showSystemNumberResults чтобы показывать все варианты при пустом поле
+    // Убедимся, что этот метод загружает документы при показе списка
     showSystemNumberResults(rangeElement) {
-        const systemNumberResults = rangeElement.querySelector('.system-number-results');
         const systemNumberSearch = rangeElement.querySelector('.system-number-search');
+        const systemNumberResults = rangeElement.querySelector('.system-number-results');
         
-        // Всегда используем текущий текст из поля для фильтрации
-        // Если поле пустое - покажем все доступные варианты
-        const currentSearchTerm = systemNumberSearch.value;
-        this.populateSystemNumberResults(rangeElement, currentSearchTerm);
+        // Если опции еще не загружены, загружаем их
+        if (rangeElement.systemNumberOptions.length === 0) {
+            this.loadSystemNumberOptions(rangeElement);
+        } else {
+            // Показываем все опции (без фильтрации)
+            this.filterSystemNumberResults(rangeElement, systemNumberSearch.value);
+        }
+        
         systemNumberResults.classList.remove('hidden');
     }
 
@@ -1498,7 +1507,7 @@ class PdfSplitter {
         if (filteredOptions.length === 0) {
             const noResults = document.createElement('div');
             noResults.className = 'px-3 py-2 text-gray-500 text-sm';
-            noResults.textContent = options.length === 0 ? 'Системные номера не загружены' : 'Ничего не найдено';
+            noResults.textContent = options.length === 0 ? 'Документы не загружены' : 'Ничего не найдено';
             systemNumberResults.appendChild(noResults);
         }
     }
@@ -2052,7 +2061,9 @@ class PdfSplitter {
     // Обновляем все индикаторы статуса
     updateAllStatusIndicators() {
         Array.from(this.documentStatuses.values()).forEach(doc => {
-            this.updateStatusIndicator(doc.docNumber, doc.pst);
+            if (doc.docNumber) {
+                this.updateStatusIndicator(doc.docNumber, doc.pst);
+            }
         });
     }
 
@@ -2301,7 +2312,7 @@ class PdfSplitter {
             if (result.success) {
                 return result.system_numbers;
             } else {
-                throw new Error(result.message || 'Системный номер не найден');
+                throw new Error(result.message || 'Документ не найден');
             }
 
         } catch (error) {
@@ -2349,13 +2360,16 @@ class PdfSplitter {
         // Сохраняем опции для этого диапазона
         rangeElement.systemNumberOptions = systemNumbers || [];
         
-        // ПОДСТАВЛЯЕМ ПЕРВОЕ ЗНАЧЕНИЕ
+        // УБИРАЕМ АВТОМАТИЧЕСКУЮ ПОДСТАНОВКУ ПЕРВОГО ЗНАЧЕНИЯ
+        // Просто очищаем поле и оставляем опции для выбора
+        systemNumberSearch.value = '';
+        systemNumberSearch.dataset.snd = '';
+        
+        // Можно показать уведомление, что доступны документы для выбора
         if (systemNumbers && systemNumbers.length > 0) {
-            this.selectSystemNumber(rangeElement, systemNumbers[0]);
-            this.showTypeChangeFeedback(systemNumberSearch);
+            this.showTypeChangeFeedback(systemNumberSearch, systemNumbers.length);
         } else {
-            systemNumberSearch.value = '';
-            systemNumberSearch.dataset.snd = '';
+            this.showTypeChangeFeedback(systemNumberSearch, 0);
         }
     }
 }
