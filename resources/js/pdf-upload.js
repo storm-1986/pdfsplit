@@ -1276,9 +1276,9 @@ class PdfSplitter {
                         value="${newName}" 
                         class="document-name border rounded px-2 py-1 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 flex-1"
                         placeholder="Название документа">
-                    <!-- Индикатор статуса рядом с названием -->
+                    <!-- Индикатор статуса БЕЗ id - будем искать по классу -->
                     <div class="flex-shrink-0">
-                        <div id="status-indicator-${docNumber}" class="status-indicator w-4 h-4 bg-gray-400 rounded-full border-2 border-white shadow" title="Статус не определен"></div>
+                        <div class="status-indicator w-4 h-4 bg-gray-400 rounded-full border-2 border-white shadow" title="Статус не определен"></div>
                     </div>
                 </div>
             </div>
@@ -1971,24 +1971,27 @@ class PdfSplitter {
 
     // Сохраняем статусы документов на фронтенде
     saveDocumentStatuses(documentIds, ranges) {
-        // Очищаем предыдущие статусы
         this.documentStatuses.clear();
         
-        // Инициализируем статусы для каждого документа
+        // console.log('Saving document statuses - using element indexes:');
+        
         documentIds.forEach((docId, index) => {
-            // Получаем номер документа из соответствующего диапазона
-            const rangeElement = this.rangesContainer.children[index];
-            const docNumber = rangeElement ? rangeElement.getAttribute('data-doc-number') : index + 1;
+            // Используем индекс элемента в контейнере как идентификатор
+            const elementIndex = index;
+            
+            // console.log(`Document ${index}:`, {
+            //     docId: docId,
+            //     elementIndex: elementIndex
+            // });
             
             this.documentStatuses.set(docId, {
                 id: docId,
-                pst: 0, // начальный статус - в очереди (красный)
+                pst: 0,
                 name: ranges[index]?.name || `Документ ${index + 1}`,
-                docNumber: docNumber
+                elementIndex: elementIndex // Используем индекс элемента
             });
         });
         
-        // Сразу обновляем индикаторы (все красные - в очереди)
         this.updateAllStatusIndicators();
     }
 
@@ -2028,6 +2031,8 @@ class PdfSplitter {
             const data = await response.json();
             
             if (data.success && data.documents_status) {
+                // console.log('Received status update:', data.documents_status);
+                
                 // Обновляем статусы
                 data.documents_status.forEach(docStatus => {
                     if (this.documentStatuses.has(docStatus.id)) {
@@ -2040,16 +2045,12 @@ class PdfSplitter {
                 // Обновляем индикаторы
                 this.updateAllStatusIndicators();
                 
-                // Проверяем, все ли документы завершены (pst === 1)
+                // Проверяем, все ли документы завершены
                 const allCompleted = Array.from(this.documentStatuses.values()).every(doc => doc.pst === 1);
                 if (allCompleted) {
-                    // Останавливаем проверку статуса
                     clearInterval(this.statusCheckInterval);
                     this.statusCheckInterval = null;
-                    
-                    // Восстанавливаем кнопку архива
                     this.restoreArchiveButton();
-                    
                     this.showNotification('Все документы успешно отправлены в архив', 'success');
                 }
             }
@@ -2061,18 +2062,27 @@ class PdfSplitter {
     // Обновляем все индикаторы статуса
     updateAllStatusIndicators() {
         Array.from(this.documentStatuses.values()).forEach(doc => {
-            if (doc.docNumber) {
-                this.updateStatusIndicator(doc.docNumber, doc.pst);
-            }
+            this.updateStatusIndicator(doc.elementIndex, doc.pst);
         });
     }
 
     // Обновляем конкретный индикатор
-    updateStatusIndicator(docNumber, status) {
-        const indicator = document.getElementById(`status-indicator-${docNumber}`);
-        if (!indicator) return;
+    updateStatusIndicator(elementIndex, status) {
+        // Ищем индикатор по индексу элемента
+        const rangeElement = this.rangesContainer.children[elementIndex];
+        if (!rangeElement) {
+            console.warn(`Диапазон не найден для индекса: ${elementIndex}`);
+            return;
+        }
         
-        // Обновляем цвет и подсказку в зависимости от статуса
+        // Находим индикатор внутри этого элемента
+        const indicator = rangeElement.querySelector('.status-indicator');
+        if (!indicator) {
+            console.warn(`Индикатор статуса не найден в диапазоне: ${elementIndex}`);
+            return;
+        }
+        
+        // Обновляем цвет и подсказку
         switch(status) {
             case 0: // В очереди - КРАСНЫЙ
                 indicator.className = 'status-indicator w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow';
