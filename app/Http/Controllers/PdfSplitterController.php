@@ -622,6 +622,7 @@ class PdfSplitterController extends Controller
 
     public function downloadRanges(Request $request)
     {
+        set_time_limit(300);
         $ipAddress = $request->ip();
         $validated = $request->validate([
             'documents' => 'required|array',
