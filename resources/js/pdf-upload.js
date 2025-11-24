@@ -2406,10 +2406,6 @@ class PdfSplitter {
             const img = thumb.querySelector('img');
             
             if (!img || !link) return;
-            
-            // Добавляем фиксированную высоту изображению
-            img.classList.add('h-48', 'object-contain', 'bg-gray-50');
-            
             // Создаем контейнер для кнопок поворота
             const rotationContainer = document.createElement('div');
             rotationContainer.className = 'absolute top-1 right-1 opacity-0 hover:opacity-100 transition-opacity duration-200 z-10';
