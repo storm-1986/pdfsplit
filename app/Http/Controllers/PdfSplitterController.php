@@ -629,7 +629,10 @@ class PdfSplitterController extends Controller
             'ranges' => 'required|array',
             'ranges.*.range' => 'required|string',
             'ranges.*.name' => 'required|string',
+            'page_rotations' => 'sometimes|array',
         ]);
+
+        $rotations = $validated['page_rotations'] ?? [];
 
         try {
             Storage::makeDirectory('temp_split');
@@ -650,9 +653,9 @@ class PdfSplitterController extends Controller
                 $tempPdfPath = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
 
                 if ($this->isPdftkAvailable($ipAddress)) {
-                    $this->extractPagesWithPdftk($validated['documents'], $pages, $tempPdfPath);
+                    $this->extractPagesWithPdftk($validated['documents'], $pages, $tempPdfPath, $rotations);
                 } else {
-                    $this->extractPagesWithImagick($validated['documents'], $pages, $tempPdfPath);
+                    $this->extractPagesWithImagick($validated['documents'], $pages, $tempPdfPath, $rotations);
                 }
                 
                 $zip->addFile($tempPdfPath, $fileName);
@@ -706,32 +709,65 @@ class PdfSplitterController extends Controller
         return $totalPages;
     }
 
-    private function extractPagesWithPdftk($documents, $targetPages, $outputPath)
+    private function extractPagesWithPdftk($documents, $targetPages, $outputPath, $rotations = [])
     {
-        $pageCounter = 0;
         $pdfFiles = [];
         $tempFiles = [];
 
         try {
+            // Сначала создаем карту всех глобальных страниц
+            $globalPageMap = [];
+            $globalPageCounter = 1;
+            
             foreach ($documents as $document) {
                 $pdfPath = storage_path('app/' . $document['pdf_path']);
                 $pdf = new Pdf($pdfPath);
                 $pageCount = $pdf->getNumberOfPages();
                 
-                $documentPages = [];
-                for ($i = 1; $i <= $pageCount; $i++) {
-                    $pageCounter++;
-                    if (in_array($pageCounter, $targetPages)) {
-                        $documentPages[] = $i;
-                    }
+                for ($localPage = 1; $localPage <= $pageCount; $localPage++) {
+                    $globalPageMap[$globalPageCounter] = [
+                        'document' => $document,
+                        'local_page' => $localPage,
+                        'pdf_path' => $pdfPath
+                    ];
+                    $globalPageCounter++;
+                }
+            }
+
+            // Группируем целевые страницы по документам для эффективной обработки
+            $documentGroups = [];
+            foreach ($targetPages as $globalPage) {
+                if (!isset($globalPageMap[$globalPage])) {
+                    throw new \Exception("Страница {$globalPage} не найдена");
                 }
                 
-                if (!empty($documentPages)) {
-                    $tempFile = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
-                    $this->extractDocumentPages($pdfPath, $documentPages, $tempFile);
-                    $pdfFiles[] = $tempFile;
-                    $tempFiles[] = $tempFile;
+                $pageInfo = $globalPageMap[$globalPage];
+                $docKey = $pageInfo['pdf_path'];
+                
+                if (!isset($documentGroups[$docKey])) {
+                    $documentGroups[$docKey] = [
+                        'pdf_path' => $pageInfo['pdf_path'],
+                        'pages' => [],
+                        'global_pages' => []
+                    ];
                 }
+                
+                $documentGroups[$docKey]['pages'][] = $pageInfo['local_page'];
+                $documentGroups[$docKey]['global_pages'][] = $globalPage;
+            }
+
+            // Обрабатываем каждую группу документов
+            foreach ($documentGroups as $docGroup) {
+                $tempFile = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
+                
+                // Извлекаем страницы из документа
+                $this->extractDocumentPages($docGroup['pdf_path'], $docGroup['pages'], $tempFile);
+                
+                // Применяем повороты с правильными глобальными номерами
+                $this->applyRotationsToExtractedPages($tempFile, $docGroup['global_pages'], $rotations);
+                
+                $pdfFiles[] = $tempFile;
+                $tempFiles[] = $tempFile;
             }
 
             if (count($pdfFiles) > 1) {
@@ -755,7 +791,6 @@ class PdfSplitterController extends Controller
             throw $e;
         }
     }
-
     private function extractDocumentPages($pdfPath, $pages, $outputPath)
     {
         try {
@@ -833,37 +868,133 @@ class PdfSplitterController extends Controller
         }
     }
 
-    private function extractPagesWithImagick($documents, $targetPages, $outputPath)
+    private function applyRotationsToExtractedPages($pdfPath, $globalPages, $rotations)
     {
-        // Старый медленный метод как fallback
-        $imagick = new Imagick();
-        $pageCounter = 0;
+        // Создаем маппинг поворотов для локальных страниц в извлеченном PDF
+        $localRotations = [];
         
-        foreach ($documents as $document) {
-            $pdfPath = storage_path('app/' . $document['pdf_path']);
-            $pdf = new Pdf($pdfPath);
-            $pagesCount = $pdf->getNumberOfPages();
+        foreach ($globalPages as $index => $globalPage) {
+            $localPageNumber = $index + 1; // Номер страницы в извлеченном PDF
             
-            for ($pageNum = 1; $pageNum <= $pagesCount; $pageNum++) {
-                $pageCounter++;
-                if (in_array($pageCounter, $targetPages)) {
-                    $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
-                    
-                    // Устанавливаем оптимизированные параметры
-                    $pdf->setCompressionQuality(80);
-                    $pdf->setResolution(150);
-                    $pdf->setPage($pageNum)->saveImage($tempImage);
-                    
-                    $pageImage = new Imagick($tempImage);
-                    $imagick->addImage($pageImage);
-                    unlink($tempImage);
-                }
+            if (isset($rotations[$globalPage]) && $rotations[$globalPage] != 0) {
+                $localRotations[$localPageNumber] = $rotations[$globalPage];
             }
         }
+        
+        if (!empty($localRotations)) {
+            Log::info("Applying rotations to extracted PDF", [
+                'pdf_path' => $pdfPath,
+                'global_pages' => $globalPages,
+                'local_rotations' => $localRotations
+            ]);
+            
+            $this->applyRotationsWithPdftk($pdfPath, $localRotations);
+        }
+    }
 
-        $imagick->setImageFormat('pdf');
-        $imagick->writeImages($outputPath, true);
-        $imagick->clear();
+    private function applyRotationsWithPdftk($pdfPath, $rotations)
+    {
+        try {
+            $tempOutput = storage_path("app/temp_split/" . Str::random(20) . ".pdf");
+            
+            // Получаем количество страниц в PDF
+            $pdf = new Pdf($pdfPath);
+            $totalPages = $pdf->getNumberOfPages();
+            
+            // Строим команду pdftk
+            $command = "pdftk " . escapeshellarg($pdfPath) . " cat";
+            
+            for ($pageNum = 1; $pageNum <= $totalPages; $pageNum++) {
+                $degrees = $rotations[$pageNum] ?? 0;
+                
+                $rotationParam = '';
+                if ($degrees == 90) {
+                    $rotationParam = 'east';
+                } elseif ($degrees == 180) {
+                    $rotationParam = 'south';
+                } elseif ($degrees == 270) {
+                    $rotationParam = 'west';
+                }
+                
+                if ($rotationParam) {
+                    $command .= " {$pageNum}{$rotationParam}";
+                    Log::info("Rotating page {$pageNum} by {$degrees}° ({$rotationParam})");
+                } else {
+                    $command .= " {$pageNum}";
+                }
+            }
+            
+            $command .= " output " . escapeshellarg($tempOutput);
+            
+            Log::info("PDftk rotation command: " . $command);
+            
+            exec($command, $output, $returnCode);
+            
+            if ($returnCode === 0 && file_exists($tempOutput)) {
+                copy($tempOutput, $pdfPath);
+                unlink($tempOutput);
+                Log::info("Successfully applied rotations with pdftk");
+                return true;
+            } else {
+                Log::error("Pdftk rotation failed", [
+                    'return_code' => $returnCode,
+                    'output' => implode("\n", $output)
+                ]);
+                if (file_exists($tempOutput)) {
+                    unlink($tempOutput);
+                }
+                return false;
+            }
+            
+        } catch (\Exception $e) {
+            Log::error("Pdftk rotation error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    private function extractPagesWithImagick($documents, $targetPages, $outputPath, $rotations = [])
+    {
+        try {
+            $imagick = new Imagick();
+            $pageCounter = 0;
+            
+            foreach ($documents as $document) {
+                $pdfPath = storage_path('app/' . $document['pdf_path']);
+                $pdf = new Pdf($pdfPath);
+                $pagesCount = $pdf->getNumberOfPages();
+                
+                for ($pageNum = 1; $pageNum <= $pagesCount; $pageNum++) {
+                    $pageCounter++;
+                    if (in_array($pageCounter, $targetPages)) {
+                        $tempImage = tempnam(sys_get_temp_dir(), 'pdf') . '.jpg';
+                        
+                        $pdf->setCompressionQuality(80);
+                        $pdf->setResolution(150);
+                        $pdf->setPage($pageNum)->saveImage($tempImage);
+                        
+                        $pageImage = new Imagick($tempImage);
+                        
+                        // Применяем поворот если указан
+                        if (isset($rotations[$pageCounter]) && $rotations[$pageCounter] != 0) {
+                            $pageImage->rotateImage('white', $rotations[$pageCounter]);
+                            Log::info("Applied rotation {$rotations[$pageCounter]}° to page {$pageCounter} with Imagick");
+                        }
+                        
+                        $imagick->addImage($pageImage);
+                        unlink($tempImage);
+                    }
+                }
+            }
+
+            $imagick->setImageFormat('pdf');
+            $imagick->writeImages($outputPath, true);
+            $imagick->clear();
+            
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Imagick extraction failed: " . $e->getMessage());
+            throw $e;
+        }
     }
 
     private function sanitizeFilename($name)

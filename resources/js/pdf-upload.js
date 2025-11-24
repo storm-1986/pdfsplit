@@ -16,7 +16,10 @@ class PdfSplitter {
         this.counterpartySelect = document.getElementById('counterparty-select');
         this.selectedCounterparty = null;
         this.isResultsVisible = false;
-                
+
+        this.pageRotations = {}; // Храним повороты страниц: {pageNum: degrees}
+        this.rotationIndicators = {}; // Для хранения индикаторов поворота
+
         // Явно находим кнопку загрузки
         this.uploadButton = this.uploadForm.querySelector('button[type="submit"]');
         
@@ -769,10 +772,10 @@ class PdfSplitter {
                 thumbContainer.className = 'thumbnail-container';
                 
                 thumb.innerHTML = `
-                    <a href="${page.image_url}" data-glightbox="title: Страница ${pageNumber}">
+                    <a href="${page.image_url}" data-glightbox="title: Страница ${pageNumber}" class="block relative">
                         <img src="${page.image_url}" 
                             alt="Страница ${pageNumber}" 
-                            class="w-full object-contain">
+                            class="w-full h-92 object-contain">
                     </a>
                     <div class="p-2 text-center bg-gray-50 border-t flex justify-between items-center">
                         <span class="text-xs font-medium">Стр. ${pageNumber}</span>
@@ -818,7 +821,11 @@ class PdfSplitter {
                 else {
                     thumbContainer.appendChild(thumb);
                 }
-                
+
+                setTimeout(() => {
+                    this.addRotationControlsToThumbnails();
+                }, 100);
+
                 thumbsContainer.appendChild(thumbContainer);
             });
             
@@ -1755,6 +1762,12 @@ class PdfSplitter {
         
         // Сбрасываем состояние кнопки загрузки
         this.resetUploadButton();
+
+        // Сбрасываем повороты
+        if (!keepFiles) {
+            this.pageRotations = {};
+            this.rotationIndicators = {};
+        }
         
         // Очищаем сообщения об ошибках
         const errorElement = this.uploadForm.querySelector('.upload-error');
@@ -1821,7 +1834,8 @@ class PdfSplitter {
                 },
                 body: JSON.stringify({
                     documents: this.uploadedDocuments,
-                    ranges: ranges
+                    ranges: ranges,
+                    page_rotations: this.pageRotations // ДОБАВЛЯЕМ ПОВОРОТЫ
                 })
             });
 
@@ -2380,6 +2394,150 @@ class PdfSplitter {
             this.showTypeChangeFeedback(systemNumberSearch, systemNumbers.length);
         } else {
             this.showTypeChangeFeedback(systemNumberSearch, 0);
+        }
+    }
+
+    addRotationControlsToThumbnails() {
+        const thumbnails = document.querySelectorAll('.thumbnail-page');
+        
+        thumbnails.forEach(thumb => {
+            const pageNum = parseInt(thumb.dataset.pageNumber);
+            const link = thumb.querySelector('a');
+            const img = thumb.querySelector('img');
+            
+            if (!img || !link) return;
+            
+            // Добавляем фиксированную высоту изображению
+            img.classList.add('h-48', 'object-contain', 'bg-gray-50');
+            
+            // Создаем контейнер для кнопок поворота
+            const rotationContainer = document.createElement('div');
+            rotationContainer.className = 'absolute top-1 right-1 opacity-0 hover:opacity-100 transition-opacity duration-200 z-10';
+            
+            rotationContainer.innerHTML = `
+                <button type="button" 
+                        class="rotate-left bg-white hover:bg-gray-100 rounded p-1 shadow-sm border border-gray-300"
+                        title="Повернуть против часовой (90°)">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <!-- Изогнутая против часовой -->
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <button type="button" 
+                        class="rotate-right bg-white hover:bg-gray-100 rounded p-1 shadow-sm border border-gray-300"
+                        title="Повернуть по часовой (90°)">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <!-- Изогнутая по часовой -->
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                            d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            `;
+            
+            // Добавляем индикатор поворота
+            const rotationIndicator = document.createElement('div');
+            rotationIndicator.className = 'rotation-indicator absolute top-1 left-1 bg-blue-500 text-white text-xs px-1 rounded hidden z-10';
+            rotationIndicator.textContent = '0°';
+            
+            // Сохраняем индикатор
+            this.rotationIndicators[pageNum] = rotationIndicator;
+            
+            // Добавляем hover эффект на ссылку
+            link.addEventListener('mouseenter', () => {
+                rotationContainer.style.opacity = '1';
+            });
+            
+            link.addEventListener('mouseleave', () => {
+                rotationContainer.style.opacity = '0';
+            });
+            
+            // Вставляем элементы в ссылку (теперь они внутри <a>)
+            link.style.position = 'relative';
+            link.appendChild(rotationContainer);
+            link.appendChild(rotationIndicator);
+            
+            // Обработчики поворота
+            const rotateLeft = rotationContainer.querySelector('.rotate-left');
+            const rotateRight = rotationContainer.querySelector('.rotate-right');
+            
+            rotateLeft.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.rotatePage(pageNum, img, -90);
+            });
+            
+            rotateRight.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.rotatePage(pageNum, img, 90);
+            });
+            
+            // Предотвращаем открытие картинки при клике на кнопки поворота
+            rotationContainer.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+        });
+    }
+
+    setFixedThumbnailSize(imgElement) {
+        // Фиксированные размеры для всех миниатюр
+        const maxWidth = 150;
+        const maxHeight = 200;
+        
+        imgElement.style.maxWidth = `${maxWidth}px`;
+        imgElement.style.maxHeight = `${maxHeight}px`;
+        imgElement.style.width = 'auto';
+        imgElement.style.height = 'auto';
+        imgElement.style.objectFit = 'contain';
+        imgElement.style.display = 'block';
+        imgElement.style.margin = '0 auto';
+    }
+
+    /**
+     * Поворот страницы
+     */
+    rotatePage(pageNum, imgElement, degrees) {
+        const currentRotation = this.pageRotations[pageNum] || 0;
+        const newRotation = (currentRotation + degrees + 360) % 360;
+        
+        // Сохраняем поворот
+        this.pageRotations[pageNum] = newRotation;
+        
+        // Удаляем предыдущие классы поворота
+        const rotationClasses = ['rotated-90', 'rotated-180', 'rotated-270'];
+        imgElement.classList.remove(...rotationClasses);
+        
+        // Добавляем соответствующий класс поворота
+        if (newRotation === 90) {
+            imgElement.classList.add('rotated-90');
+        } else if (newRotation === 180) {
+            imgElement.classList.add('rotated-180');
+        } else if (newRotation === 270) {
+            imgElement.classList.add('rotated-270');
+        }
+        // 0 градусов - убираем все классы
+        
+        // Обновляем индикатор поворота
+        this.updateRotationIndicator(pageNum, newRotation);
+        
+        console.log(`Page ${pageNum} rotated to ${newRotation}°`);
+    }
+
+    /**
+     * Обновление индикатора поворота
+     */
+    updateRotationIndicator(pageNum, degrees) {
+        const indicator = this.rotationIndicators[pageNum];
+        if (indicator) {
+            indicator.textContent = `${degrees}°`;
+            indicator.classList.remove('hidden');
+            
+            // Скрываем индикатор через 3 секунды
+            setTimeout(() => {
+                indicator.classList.add('hidden');
+            }, 3000);
         }
     }
 }

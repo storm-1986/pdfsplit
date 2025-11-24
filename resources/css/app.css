@@ -348,6 +348,60 @@
     background: rgba(255, 255, 255, 0.95);
 }
 
+/* Фиксированные размеры для контейнеров миниатюр */
+
+.thumbnail-page:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.thumbnail-page a {
+    display: block;
+    position: relative;
+}
+
+.thumbnail-page img {
+    width: 100%;
+    object-fit: contain;
+    background: #f9fafb;
+    transition: transform 0.3s ease;
+}
+
+/* Стили для повернутых изображений */
+.thumbnail-page img.rotated-90 {
+    transform: rotate(90deg);
+}
+
+.thumbnail-page img.rotated-180 {
+    transform: rotate(180deg);
+}
+
+.thumbnail-page img.rotated-270 {
+    transform: rotate(270deg);
+}
+
+/* Стили для кнопок поворота */
+.rotate-left, .rotate-right {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rotate-left:hover, .rotate-right:hover {
+    background: #3b82f6 !important;
+    color: white;
+    transform: scale(1.1);
+}
+
+.rotation-indicator {
+    font-size: 10px;
+    padding: 2px 4px;
+    background: #3b82f6;
+    color: white;
+    border-radius: 4px;
+    font-weight: bold;
+    pointer-events: none;
+}
+
 @keyframes fadeInScale {
     from {
         opacity: 0;
