@@ -22,7 +22,8 @@ class CleanTempPdfs extends Command
         
         $this->cleanDirectory('temp_pdfs', $cutoffTime);
         $this->cleanDirectory('public/temp_thumbs', $cutoffTime);
-        $this->cleanDirectory('public/temp_merged', $cutoffTime);
+        $this->cleanDirectory('public/temp_zips', $cutoffTime);
+        $this->cleanDirectory('temp_split', $cutoffTime);
         
         $this->info('Очистка временных PDF завершена');
     }

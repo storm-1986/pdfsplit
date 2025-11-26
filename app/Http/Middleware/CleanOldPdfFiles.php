@@ -10,7 +10,10 @@ class CleanOldPdfFiles
 {
     protected $tempDirectories = [
         'temp_pdfs',
-        'public/temp_thumbs'
+        'public/temp_thumbs',
+        'public/temp_merged',
+        'public/temp_zips',
+        'temp_split'
     ];
 
     public function handle($request, Closure $next)

@@ -1301,18 +1301,18 @@ class PdfSplitterController extends Controller
         }
     }
 
-    public function cleanup($sessionId)
-    {
-        try {
-            Storage::deleteDirectory("temp_pdfs/{$sessionId}");
-            Storage::disk('public')->deleteDirectory("temp_thumbs/{$sessionId}");
-            Storage::disk('public')->deleteDirectory("temp_merged/{$sessionId}");
-            Storage::disk('public')->delete("temp_zips/{$sessionId}.zip");
+    // public function cleanup($sessionId)
+    // {
+    //     try {
+    //         Storage::deleteDirectory("temp_pdfs/{$sessionId}");
+    //         Storage::disk('public')->deleteDirectory("temp_thumbs/{$sessionId}");
+    //         Storage::disk('public')->deleteDirectory("temp_merged/{$sessionId}");
+    //         Storage::disk('public')->delete("temp_zips/{$sessionId}.zip");
             
-            return response()->json(['success' => true]);
-        } catch (\Exception $e) {
-            Log::error("Ошибка очистки файлов сессии {$sessionId}: " . $e->getMessage());
-            return response()->json(['success' => false], 500);
-        }
-    }
+    //         return response()->json(['success' => true]);
+    //     } catch (\Exception $e) {
+    //         Log::error("Ошибка очистки файлов сессии {$sessionId}: " . $e->getMessage());
+    //         return response()->json(['success' => false], 500);
+    //     }
+    // }
 }
