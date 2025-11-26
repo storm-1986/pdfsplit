@@ -822,10 +822,6 @@ class PdfSplitter {
                     thumbContainer.appendChild(thumb);
                 }
 
-                setTimeout(() => {
-                    this.addRotationControlsToThumbnails();
-                }, 100);
-
                 thumbsContainer.appendChild(thumbContainer);
             });
             
@@ -835,6 +831,10 @@ class PdfSplitter {
         
         // Инициализируем подсветку
         this.updateThumbnailsHighlight();
+
+        setTimeout(() => {
+            this.addRotationControlsToThumbnails();
+        }, 100);
         
         if (window._glightbox) {
             window._glightbox.reload();
@@ -1758,6 +1758,7 @@ class PdfSplitter {
             this.hideFileInfo();
             this.clearFileError(); // Очищаем ошибки
             this.rangeCounter = 0; // Сбрасываем счетчик диапазонов!
+            this.resetCounterparty();
         }
         
         // Сбрасываем состояние кнопки загрузки
@@ -1776,6 +1777,38 @@ class PdfSplitter {
         // Сбрасываем данные
         this.uploadedDocuments = [];
         this.totalPages = 0;
+    }
+
+    // Сбрасывает выбор контрагента
+    resetCounterparty() {
+        // Сбрасываем поле поиска по ID
+        const searchInput = document.getElementById('counterparty-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+        }
+        
+        // Очищаем результаты поиска
+        const resultsContainer = document.getElementById('counterparty-results');
+        if (resultsContainer) {
+            resultsContainer.innerHTML = '';
+            resultsContainer.classList.add('hidden');
+        }
+        
+        // Сбрасываем оригинальный select
+        if (this.counterpartySelect) {
+            this.counterpartySelect.selectedIndex = 0;
+        }
+        
+        // Сбрасываем скрытый input с ID контрагента (если есть)
+        const hiddenCounterpartyId = document.querySelector('input[name="counterparty_id"], input[id="counterparty_id"]');
+        if (hiddenCounterpartyId) {
+            hiddenCounterpartyId.value = '';
+        }
+        
+        // Сбрасываем в памяти
+        this.selectedCounterparty = null;
+        
+        console.log('Counterparty selection fully reset');
     }
 
     // Метод для сброса кнопки загрузки
@@ -2197,6 +2230,7 @@ class PdfSplitter {
         this.counterpartySearch.type = 'text';
         this.counterpartySearch.placeholder = 'Поиск контрагента...';
         this.counterpartySearch.className = 'w-full px-3 py-2 border border-gray-300 rounded-md mb-2 focus:outline-none focus:ring-2 focus:ring-blue-500';
+        this.counterpartySearch.id = 'counterparty-search-input';
         customSelectContainer.appendChild(this.counterpartySearch);
 
         // Создаем контейнер для результатов поиска
@@ -2412,33 +2446,23 @@ class PdfSplitter {
             
             rotationContainer.innerHTML = `
                 <button type="button" 
-                        class="rotate-left bg-white hover:bg-gray-100 rounded p-1 shadow-sm border border-gray-300"
-                        title="Повернуть против часовой (90°)">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <!-- Изогнутая против часовой -->
+                        class="rotate-left bg-white hover:bg-gray-100 rounded p-1 shadow-sm border border-gray-300 transition-all duration-200"
+                        title="Повернуть против часовой">
+                    <svg class="w-3 h-3 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
                             d="M15 19l-7-7 7-7"/>
                     </svg>
                 </button>
                 <button type="button" 
-                        class="rotate-right bg-white hover:bg-gray-100 rounded p-1 shadow-sm border border-gray-300"
-                        title="Повернуть по часовой (90°)">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <!-- Изогнутая по часовой -->
+                        class="rotate-right bg-white hover:bg-gray-100 rounded p-1 shadow-sm border border-gray-300 transition-all duration-200"
+                        title="Повернуть по часовой">
+                    <svg class="w-3 h-3 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
                             d="M9 5l7 7-7 7"/>
                     </svg>
                 </button>
             `;
-            
-            // Добавляем индикатор поворота
-            const rotationIndicator = document.createElement('div');
-            rotationIndicator.className = 'rotation-indicator absolute top-1 left-1 bg-blue-500 text-white text-xs px-1 rounded hidden z-10';
-            rotationIndicator.textContent = '0°';
-            
-            // Сохраняем индикатор
-            this.rotationIndicators[pageNum] = rotationIndicator;
-            
+
             // Добавляем hover эффект на ссылку
             link.addEventListener('mouseenter', () => {
                 rotationContainer.style.opacity = '1';
@@ -2451,7 +2475,6 @@ class PdfSplitter {
             // Вставляем элементы в ссылку (теперь они внутри <a>)
             link.style.position = 'relative';
             link.appendChild(rotationContainer);
-            link.appendChild(rotationIndicator);
             
             // Обработчики поворота
             const rotateLeft = rotationContainer.querySelector('.rotate-left');
@@ -2477,64 +2500,83 @@ class PdfSplitter {
         });
     }
 
-    setFixedThumbnailSize(imgElement) {
-        // Фиксированные размеры для всех миниатюр
-        const maxWidth = 150;
-        const maxHeight = 200;
-        
-        imgElement.style.maxWidth = `${maxWidth}px`;
-        imgElement.style.maxHeight = `${maxHeight}px`;
-        imgElement.style.width = 'auto';
-        imgElement.style.height = 'auto';
-        imgElement.style.objectFit = 'contain';
-        imgElement.style.display = 'block';
-        imgElement.style.margin = '0 auto';
-    }
+    // Поворот страницы
+    async rotatePage(pageNum, imgElement, degrees) {
+        console.log('Basic rotation:', { pageNum, degrees });
 
-    /**
-     * Поворот страницы
-     */
-    rotatePage(pageNum, imgElement, degrees) {
-        const currentRotation = this.pageRotations[pageNum] || 0;
-        const newRotation = (currentRotation + degrees + 360) % 360;
-        
-        // Сохраняем поворот
-        this.pageRotations[pageNum] = newRotation;
-        
-        // Удаляем предыдущие классы поворота
-        const rotationClasses = ['rotated-90', 'rotated-180', 'rotated-270'];
-        imgElement.classList.remove(...rotationClasses);
-        
-        // Добавляем соответствующий класс поворота
-        if (newRotation === 90) {
-            imgElement.classList.add('rotated-90');
-        } else if (newRotation === 180) {
-            imgElement.classList.add('rotated-180');
-        } else if (newRotation === 270) {
-            imgElement.classList.add('rotated-270');
-        }
-        // 0 градусов - убираем все классы
-        
-        // Обновляем индикатор поворота
-        this.updateRotationIndicator(pageNum, newRotation);
-        
-        console.log(`Page ${pageNum} rotated to ${newRotation}°`);
-    }
+        try {
+            const pageInfo = this.findPageInfo(pageNum);
 
-    /**
-     * Обновление индикатора поворота
-     */
-    updateRotationIndicator(pageNum, degrees) {
-        const indicator = this.rotationIndicators[pageNum];
-        if (indicator) {
-            indicator.textContent = `${degrees}°`;
-            indicator.classList.remove('hidden');
+            const response = await fetch('/rotate-page', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': this.previewContainer.dataset.csrfToken,
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    session_id: pageInfo.sessionId,
+                    doc_index: pageInfo.docIndex,
+                    page_number: pageInfo.localPageNum,
+                    degrees: degrees
+                })
+            });
+
+            const data = await response.json();
             
-            // Скрываем индикатор через 3 секунды
-            setTimeout(() => {
-                indicator.classList.add('hidden');
-            }, 3000);
+            if (data.success) {
+                const newUrl = data.new_thumb_url + '?t=' + Date.now();
+                
+                // Обновляем миниатюру
+                imgElement.src = newUrl;
+                
+                // Обновляем ссылку для glightbox
+                const linkElement = imgElement.closest('a');
+                if (linkElement) {
+                    linkElement.href = newUrl;
+                }
+
+                // Передаем повороты
+                if (!this.pageRotations[pageNum]) {
+                    this.pageRotations[pageNum] = 0;
+                }
+                this.pageRotations[pageNum] = (this.pageRotations[pageNum] + degrees + 360) % 360;
+                
+                // Переинициализируем glightbox
+                if (window._glightbox) {
+                    window._glightbox.reload();
+                }
+                
+            } else {
+                throw new Error(data.message);
+            }
+            
+        } catch (error) {
+            console.error('Rotation failed:', error);
+            this.showNotification('Ошибка поворота: ' + error.message, 'error');
         }
+    }
+
+    findPageInfo(globalPageNum) {
+        let currentPage = 1;
+        
+        for (let docIndex = 0; docIndex < this.uploadedDocuments.length; docIndex++) {
+            const doc = this.uploadedDocuments[docIndex];
+            const docPageCount = doc.pages.length;
+            
+            if (globalPageNum >= currentPage && globalPageNum < currentPage + docPageCount) {
+                const localPageNum = globalPageNum - currentPage + 1;
+                return {
+                    sessionId: doc.session_id,
+                    docIndex: docIndex,
+                    localPageNum: localPageNum
+                };
+            }
+            
+            currentPage += docPageCount;
+        }
+        
+        throw new Error(`Page ${globalPageNum} not found`);
     }
 }
 

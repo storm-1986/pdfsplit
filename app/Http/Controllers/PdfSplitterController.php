@@ -548,16 +548,13 @@ class PdfSplitterController extends Controller
         return $documents;
     }
 
-    protected function generateThumbnails($pdfPath, $sessionId, $ipAddress, $documentIndex = null)
+    protected function generateThumbnails($pdfPath, $sessionId, $ipAddress, $documentIndex = 0)
     {
         $pdf = new Pdf($pdfPath);
         $pages = [];
         
         // Создаем уникальную поддиректорию для каждого документа
-        $thumbDir = "temp_thumbs/{$sessionId}";
-        if ($documentIndex !== null) {
-            $thumbDir .= "/doc_{$documentIndex}";
-        }
+        $thumbDir = "temp_thumbs/{$sessionId}/doc_{$documentIndex}";
         
         Storage::disk('public')->makeDirectory($thumbDir);
         
@@ -910,11 +907,11 @@ class PdfSplitterController extends Controller
                 
                 $rotationParam = '';
                 if ($degrees == 90) {
-                    $rotationParam = 'east';
+                    $rotationParam = 'right';
                 } elseif ($degrees == 180) {
-                    $rotationParam = 'south';
+                    $rotationParam = 'down';
                 } elseif ($degrees == 270) {
-                    $rotationParam = 'west';
+                    $rotationParam = 'left';
                 }
                 
                 if ($rotationParam) {
@@ -1232,6 +1229,75 @@ class PdfSplitterController extends Controller
                 'success' => false,
                 'error' => $e->getMessage()
             ];
+        }
+    }
+
+    public function rotatePage(Request $request)
+    {
+        $validated = $request->validate([
+            'session_id' => 'required|string',
+            'doc_index' => 'required|integer', 
+            'page_number' => 'required|integer',
+            'degrees' => 'required|integer|in:-90,90'
+        ]);
+
+        try {
+            $sessionId = $validated['session_id'];
+            $docIndex = $validated['doc_index'];
+            $pageNumber = $validated['page_number'];
+            $degrees = $validated['degrees'];
+
+            $newThumbUrl = $this->updateThumbnail($sessionId, $docIndex, $pageNumber, $degrees);
+
+            return response()->json([
+                'success' => true,
+                'new_thumb_url' => $newThumbUrl,
+                'message' => 'Thumbnail rotated successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Thumbnail rotation error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Rotation failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function updateThumbnail($sessionId, $docIndex, $pageNumber, $degrees)
+    {
+        try {
+
+            // Путь к существующей миниатюре
+            $thumbPath = "temp_thumbs/{$sessionId}/doc_{$docIndex}/page_{$pageNumber}.jpg";
+            $fullThumbPath = storage_path('app/public/' . $thumbPath);
+            
+            Log::info("Existing thumbnail", [
+                'thumb_path' => $thumbPath,
+                'exists' => file_exists($fullThumbPath)
+            ]);
+
+            if (!file_exists($fullThumbPath)) {
+                throw new \Exception("Thumbnail not found: {$thumbPath}");
+            }
+
+            // Загружаем и поворачиваем существующую миниатюру
+            $image = new Imagick($fullThumbPath);
+            
+            $image->rotateImage('white', $degrees);
+            $image->setImagePage(0, 0, 0, 0);
+            
+            // Сохраняем поверх оригинала
+            $image->writeImage($fullThumbPath);
+            $image->clear();
+
+            Log::info("Thumbnail rotated successfully");
+
+            return asset("storage/{$thumbPath}") . '?t=' . time();
+            
+        } catch (\Exception $e) {
+            Log::error('Thumbnail rotation failed', ['error' => $e->getMessage()]);
+            throw $e;
         }
     }
 
