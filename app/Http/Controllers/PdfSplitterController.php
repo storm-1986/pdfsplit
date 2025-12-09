@@ -16,10 +16,12 @@ use Hfig\MAPI\OLE\Pear\DocumentFactory;
 
 class PdfSplitterController extends Controller
 {
-    private $bearerToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJQbGF0Zm9ybSBmb3IgZGV2ZWxvcG1lbnQiLCJ1c2VybmFtZSI6Indkb2MiLCJpYXQiOjE3NTg4MDg2ODUsImlzcyI6IlNwcmluZy1Ub29sLVNlcnZlciIsImV4cCI6MTgwMDgwODY4NX0.XkZlJ1brxBv7ltZ7dOYAilsYS4jfaZQ2jT3Ng2XXsMc';
+    private $bearerToken;
 
     public function __construct()
     {
+        $this->bearerToken = env('API_TOKEN');
+
         $requiredDirs = [
             storage_path('app/temp_pdfs'),
             storage_path('app/temp_split'),
